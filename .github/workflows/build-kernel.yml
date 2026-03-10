@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     name: Lamu Kernel Build
-    runs-on: ubuntu-latest
+    runs-on: aapt2
 
     permissions:
       contents: write
@@ -23,16 +23,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Maximize disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
 
       - name: Install dependencies
         run: |
