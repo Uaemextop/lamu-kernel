@@ -244,7 +244,13 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
           cd KernelSU
-          KSU_VERSION=$(expr $(curl -sI "https://api.github.com/repos/tiann/KernelSU/commits?sha=main&per_page=1" | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p') "+" 30000)
+          COMMIT_COUNT=$(curl -sI "https://api.github.com/repos/tiann/KernelSU/commits?sha=main&per_page=1" | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p')
+          if [ -z "$COMMIT_COUNT" ] || ! [ "$COMMIT_COUNT" -eq "$COMMIT_COUNT" ] 2>/dev/null; then
+            echo "⚠️ Could not fetch commit count, using default version"
+            KSU_VERSION=16
+          else
+            KSU_VERSION=$(expr $COMMIT_COUNT "+" 30000)
+          fi
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
 
