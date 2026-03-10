@@ -7,6 +7,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     env:
       TARGET_PRODUCT: lamu
       KERNEL_DEFCONFIG: mgk_64_k66_defconfig
