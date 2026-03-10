@@ -1,0 +1,229 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      TARGET_PRODUCT: lamu
+      KERNEL_DEFCONFIG: mgk_64_k66_defconfig
+      KERNEL_BUILD_VARIANT: user
+      KERNEL_TARGET_ARCH: arm64
+      KERNEL_DIR: kernel/kernel_device_modules-6.6
+      LINUX_KERNEL_VERSION: kernel-6.6
+
+    steps:
+      - name: Maximize disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential flex libelf-dev libssl-dev \
+            libncurses-dev python3 git curl wget rsync cpio zip unzip
+
+      - name: Clone external dependencies
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir/
+
+          mkdir -vp $my_top_dir/external
+
+          cd $my_top_dir/external
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/libcap -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/libcap-ng -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/bazel-skylib -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/bazelbuild-rules_cc -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/bazelbuild-rules_license -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/bazelbuild-rules_pkg -b main-kernel
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/bazelbuild-rules_python -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/bazelbuild-rules_rust -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/stardoc -b android15-release
+
+          mkdir -vp $my_top_dir/prebuilts/bazel/linux-x86_64
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/bazel/linux-x86_64 -b android15-release $my_top_dir/prebuilts/bazel/linux-x86_64
+
+          mkdir -vp $my_top_dir/external/python/absl-py
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/python/absl-py -b android15-release $my_top_dir/external/python/absl-py
+
+      - name: Clone prebuilts - Clang and GCC
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          mkdir -vp $my_top_dir/prebuilts/clang/host
+
+          cd $my_top_dir/prebuilts/clang/host
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android15-release
+
+          mkdir -vp $my_top_dir/prebuilts/gcc/linux-x86/host
+
+          cd $my_top_dir/prebuilts/gcc/linux-x86/host
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 -b android15-release
+
+      - name: Clone prebuilts - build-tools, jdk, rust, clang-tools
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir/prebuilts
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/build-tools -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/rust -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/clang-tools -b android15-release
+
+      - name: Clone build rules and system tools
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          mkdir -vp $my_top_dir/build/
+
+          git clone --depth 1 https://android.googlesource.com/platform/build/bazel_common_rules -b android15-release $my_top_dir/build/bazel_common_rules
+
+          mkdir -vp $my_top_dir/system/tools/
+
+          cd $my_top_dir/system/tools/
+
+          git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg -b android15-release
+
+      - name: Clone prebuilts - NDK
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          mkdir -vp $my_top_dir/prebuilts/ndk
+
+          cd $my_top_dir/prebuilts/ndk/
+
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-2025
+
+      - name: Clone kernel source code
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir
+
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-mtk.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-build-kernel.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-build-bazel_mgk_rules.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-prebuilts-kernel-build-tools.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt66xx.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-common.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-connfem.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-conninfra.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-fmradio.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-gps.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-adaptor.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-gpu.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v3.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v2.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-udc.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-linux_v2.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-mtkcam.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-afs_common_utils.git -b android-15-release-vvta35
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-kernel_device_modules-6.6.git -b android-15-release-vvta35
+
+      - name: Build kernel with Bazel
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir
+
+          KERNEL_ROOT_DIR=$PWD
+          KERNEL_DEFCONFIG_OVERLAYS="mgk_64_k66_defconfig"
+          KERNEL_BAZEL_BUILD_OUT=out/target/product/${TARGET_PRODUCT}/obj/KLEAF_OBJ
+          KERNEL_BAZEL_DIST_OUT=out/target/product/${TARGET_PRODUCT}/obj/KLEAF_OBJ/dist
+
+          export BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+          export DEFCONFIG_OVERLAYS="mt6768_overlay.config lamu_overlay.config"
+          export KERNEL_VERSION=kernel-6.6
+          export SOURCE_DATE_EPOCH=0
+          export JAVA_HOME=${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86
+          export PATH="${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86/bin:${PATH}"
+
+          PRIVATE_BAZEL_BUILD_FLAG="--//build/bazel_mgk_rules:kernel_version=${LINUX_KERNEL_VERSION#kernel-} --experimental_writable_outputs --noenable_bzlmod --config=stamp --repo_manifest=${KERNEL_ROOT_DIR}/${KERNEL_DIR}/fake_manifest.xml"
+
+          my_kernel_target=${KERNEL_DEFCONFIG%_defconfig}
+
+          PRIVATE_BAZEL_BUILD_GOAL="//${KERNEL_DIR#kernel/}:${my_kernel_target}_customer_modules_install.${KERNEL_BUILD_VARIANT}"
+
+          PRIVATE_BAZEL_DIST_GOAL="//${KERNEL_DIR#kernel/}:${my_kernel_target}_customer_dist.${KERNEL_BUILD_VARIANT}"
+
+          cd ${KERNEL_ROOT_DIR}/kernel
+
+          tools/bazel \
+            --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
+            --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
+            build ${PRIVATE_BAZEL_BUILD_FLAG} ${PRIVATE_BAZEL_BUILD_GOAL}
+
+          tools/bazel \
+            --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
+            --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
+            run ${PRIVATE_BAZEL_BUILD_FLAG} --nokmi_symbol_list_violations_check ${PRIVATE_BAZEL_DIST_GOAL} \
+            -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}
+
+          tools/bazel \
+            --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
+            --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
+            run ${PRIVATE_BAZEL_BUILD_FLAG} \
+            //${LINUX_KERNEL_VERSION}:kernel_aarch64_abi_dist \
+            -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}/abi
+
+      - name: Package build output
+        if: success()
+        run: |
+          cd kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist
+          zip -r $GITHUB_WORKSPACE/kernel-lamu-build.zip .
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-output
+          path: kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/
+          retention-days: 14
+
+      - name: Create GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-lamu-${{ github.run_number }}
+          name: Kernel Lamu Build #${{ github.run_number }}
+          body: |
+            Automated kernel build for **lamu** (TARGET_PRODUCT).
+
+            - **Defconfig**: mgk_64_k66_defconfig
+            - **Build variant**: user
+            - **Architecture**: arm64
+            - **Kernel version**: kernel-6.6
+          files: kernel-lamu-build.zip
