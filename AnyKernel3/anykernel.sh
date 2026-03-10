@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=KernelSU-Next for Moto G05 (lamu)
+kernel.string=Custom Kernel for Moto G05 (lamu)
 do.devicecheck=1
 do.modules=0
 do.systemless=0
@@ -39,7 +39,7 @@ case $kernel_version in
 esac
 
 ui_print " "
-ui_print "KernelSU-Next for Moto G05 (lamu)"
+ui_print "Custom Kernel for Moto G05 (lamu)"
 ui_print "Kernel version: 6.6"
 ui_print " "
 $ksu_supported || abort "  -> Unsupported kernel version, abort."

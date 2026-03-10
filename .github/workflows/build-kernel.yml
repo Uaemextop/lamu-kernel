@@ -2,55 +2,10 @@ name: Build Kernel
 
 on:
   workflow_dispatch:
-    inputs:
-      SUSFS:
-        description: "Enable SUSFS"
-        required: true
-        type: choice
-        options:
-          - 'On'
-          - 'Off'
-        default: 'On'
-
-      bbg:
-        description: "Enable Baseband-guard"
-        required: true
-        type: choice
-        options:
-          - 'On'
-          - 'Off'
-        default: 'On'
-
-      bbr:
-        description: "Enable BBR TCP congestion algorithm"
-        required: true
-        type: choice
-        options:
-          - 'On'
-          - 'Off'
-        default: 'Off'
-
-      proxy:
-        description: "Enable proxy/networking performance optimizations (disable for MediaTek chips if issues arise)"
-        required: true
-        type: choice
-        options:
-          - 'On'
-          - 'Off'
-        default: 'Off'
-
-      UNICODE_BYPASS:
-        description: "Enable Unicode zero-width bypass fix patch"
-        required: true
-        type: choice
-        options:
-          - 'On'
-          - 'Off'
-        default: 'Off'
 
 jobs:
   build:
-    name: Lamu KernelSU-Next SUSFS ${{ github.event.inputs.SUSFS }}
+    name: Lamu Kernel Build
     runs-on: ubuntu-latest
 
     permissions:
@@ -63,8 +18,6 @@ jobs:
       KERNEL_TARGET_ARCH: arm64
       KERNEL_DIR: kernel/kernel_device_modules-6.6
       LINUX_KERNEL_VERSION: kernel-6.6
-      ANDROID_VERSION: android15
-      KERNEL_VERSION: '6.6'
 
     steps:
       - name: Checkout repository
@@ -81,18 +34,12 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Configure Git
-        run: |
-          git config --global user.name "build"
-          git config --global user.email "build@github.com"
-
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             bc bison build-essential flex libelf-dev libssl-dev \
-            libncurses-dev python3 git curl wget rsync cpio zip unzip \
-            liblz4-tool zlib1g-dev libxml2-utils gawk dos2unix
+            libncurses-dev python3 git curl wget rsync cpio zip unzip
 
       - name: Clone external dependencies
         run: |
@@ -215,168 +162,6 @@ jobs:
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-afs_common_utils.git -b android-15-release-vvta35
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-kernel_device_modules-6.6.git -b android-15-release-vvta35
 
-      - name: Clean kernel source
-        run: |
-          my_top_dir=$PWD/kernel_platform
-
-          # Remove protected exports if present
-          rm $my_top_dir/kernel-mtk/android/abi_gki_protected_exports_* 2>/dev/null || echo "No protected exports to remove"
-
-          # Remove -dirty from kernel version string
-          sed -i 's/ -dirty//g' $my_top_dir/kernel-mtk/scripts/setlocalversion
-          sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' $my_top_dir/kernel-mtk/scripts/setlocalversion
-
-          # Set custom kernel version suffix for 6.6
-          ESCAPED_SUFFIX=$(printf '%s\n' "-android15-lamu-kernelsu" | sed 's:[\/&]:\\&:g')
-          sudo sed -i "s/-4k/$ESCAPED_SUFFIX/g" $my_top_dir/kernel-mtk/arch/arm64/configs/gki_defconfig
-          sed -i 's/${scm_version}//' $my_top_dir/kernel-mtk/scripts/setlocalversion
-
-      - name: Setup Baseband-guard
-        if: ${{ github.event.inputs.bbg == 'On' }}
-        run: |
-          cd kernel_platform/kernel-mtk
-          curl -sSL https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh -o setup.sh
-          bash setup.sh
-
-      - name: Setup KernelSU-Next
-        run: |
-          cd kernel_platform
-
-          # Download and run KernelSU-Next setup script
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-
-          cd KernelSU-Next
-          KSU_VERSION=$(expr $(curl -sI "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/commits?sha=dev&per_page=1" | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p') "+" 30000)
-          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-          sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
-
-      - name: Setup and apply patches
-        run: |
-          cd kernel_platform
-
-          # Clone patch repositories
-          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            git clone https://github.com/cctv18/susfs4oki.git -b oki-android15-6.6
-          fi
-          git clone https://github.com/Xiaomichael/kernel_patches.git
-
-          # Copy patch files
-          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            cp susfs4oki/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch ./kernel-mtk/
-            cp susfs4oki/kernel_patches/fs/* ./kernel-mtk/fs/
-            cp susfs4oki/kernel_patches/include/linux/* ./kernel-mtk/include/linux/
-          else
-            cp kernel_patches/next/scope_min_manual_hooks_v1.6.patch ./kernel-mtk/
-          fi
-
-          # Copy lz4 patch (non-lz4kd path for 6.6)
-          cp kernel_patches/zram/001-lz4.patch ./kernel-mtk/
-          cp kernel_patches/zram/lz4armv8.S ./kernel-mtk/lib/
-
-          if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "On" ]; then
-            cp kernel_patches/common/unicode_bypass_fix_6.1+.patch ./kernel-mtk/unicode_bypass_fix.patch
-          fi
-
-          # Apply patches
-          cd kernel-mtk
-
-          if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "On" ]; then
-            echo "Applying Unicode zero-width bypass fix patch..."
-            patch -p1 < unicode_bypass_fix.patch
-          fi
-
-          # Apply lz4 patch (6.6 without lz4kd)
-          echo "Applying lz4 patch..."
-          git apply -p1 < 001-lz4.patch || true
-
-          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            echo "Applying SUSFS patch..."
-            patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch || true
-            cp ../kernel_patches/69_hide_stuff.patch ./
-            patch -p1 -F 3 < 69_hide_stuff.patch
-          else
-            echo "Applying MANUAL_HOOK patch..."
-            patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.6.patch
-          fi
-
-      - name: Configure kernel options
-        run: |
-          cd kernel_platform
-
-          DEFCONFIG=./kernel-mtk/arch/arm64/configs/gki_defconfig
-
-          # Enable KSU
-          echo "CONFIG_KSU=y" >> "$DEFCONFIG"
-
-          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            echo "CONFIG_KSU_SUSFS=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> "$DEFCONFIG"
-          else
-            echo "CONFIG_KSU_SUSFS=n" >> "$DEFCONFIG"
-            echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$DEFCONFIG"
-          fi
-
-          # Mountify support
-          echo "CONFIG_TMPFS_XATTR=y" >> "$DEFCONFIG"
-          echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$DEFCONFIG"
-
-          if [ "${{ github.event.inputs.bbg }}" == "On" ]; then
-            echo "CONFIG_BBG=y" >> "$DEFCONFIG"
-            echo 'CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"' >> "$DEFCONFIG"
-          fi
-
-          if [ "${{ github.event.inputs.bbr }}" == "On" ]; then
-            echo "CONFIG_TCP_CONG_ADVANCED=y" >> "$DEFCONFIG"
-            echo "CONFIG_TCP_CONG_BBR=y" >> "$DEFCONFIG"
-            echo "CONFIG_NET_SCH_FQ=y" >> "$DEFCONFIG"
-            echo "CONFIG_TCP_CONG_BIC=n" >> "$DEFCONFIG"
-            echo "CONFIG_TCP_CONG_WESTWOOD=n" >> "$DEFCONFIG"
-            echo "CONFIG_TCP_CONG_HTCP=n" >> "$DEFCONFIG"
-          fi
-
-          if [ "${{ github.event.inputs.proxy }}" == "On" ]; then
-            echo "CONFIG_BPF_STREAM_PARSER=y" >> "$DEFCONFIG"
-            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$DEFCONFIG"
-            echo "CONFIG_NETFILTER_XT_SET=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_MAX=65534" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_BITMAP_IP=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_BITMAP_PORT=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_IP=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_IPMARK=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_IPPORT=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_IPPORTIP=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_IPPORTNET=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_IPMAC=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_MAC=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_NETPORTNET=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_NET=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_NETNET=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_NETPORT=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_HASH_NETIFACE=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP_SET_LIST_SET=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP6_NF_NAT=y" >> "$DEFCONFIG"
-            echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >> "$DEFCONFIG"
-          fi
-
-          # O2 optimization for 6.6
-          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "$DEFCONFIG"
-
-          # Skip unnecessary header install
-          echo "CONFIG_HEADERS_INSTALL=n" >> "$DEFCONFIG"
-
-          # Skip defconfig check
-          sed -i 's/check_defconfig//' ./kernel-mtk/build.config.gki 2>/dev/null || true
-
       - name: Build kernel with Bazel
         run: |
           my_top_dir=$PWD/kernel_platform
@@ -384,7 +169,6 @@ jobs:
           cd $my_top_dir
 
           KERNEL_ROOT_DIR=$PWD
-          KERNEL_DEFCONFIG_OVERLAYS="mgk_64_k66_defconfig"
           KERNEL_BAZEL_BUILD_OUT=out/target/product/${TARGET_PRODUCT}/obj/KLEAF_OBJ
           KERNEL_BAZEL_DIST_OUT=out/target/product/${TARGET_PRODUCT}/obj/KLEAF_OBJ/dist
 
@@ -426,7 +210,6 @@ jobs:
       - name: Package AnyKernel3
         if: success()
         run: |
-          # Find the kernel Image from build output
           image_path=$(find kernel_platform/ -name "Image" -type f | head -n 1)
           if [ -n "$image_path" ] && [ -f "$image_path" ]; then
             echo "Found Image at: $image_path"
@@ -439,32 +222,20 @@ jobs:
           fi
 
           cd AnyKernel3
-          zip -r9 "$GITHUB_WORKSPACE/AnyKernel3-lamu-KernelSU-Next.zip" ./* -x '*.git*'
-
-      - name: Set artifact name
-        if: success()
-        id: set_name
-        run: |
-          BASE_NAME="lamu_MotoG05_KernelSU_Next_${{ env.KSUVER }}"
-          if [ "${{ github.event.inputs.SUSFS }}" = "On" ]; then
-            FINAL_NAME="${BASE_NAME}_SUSFS"
-          else
-            FINAL_NAME="${BASE_NAME}"
-          fi
-          echo "ARTIFACT_NAME=${FINAL_NAME}" >> $GITHUB_OUTPUT
-
-      - name: Upload AnyKernel3 artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.set_name.outputs.ARTIFACT_NAME }}
-          path: AnyKernel3/*
+          zip -r9 "$GITHUB_WORKSPACE/AnyKernel3-lamu.zip" ./* -x '*.git*'
 
       - name: Package build output
         if: success()
         run: |
           cd kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist
           zip -r $GITHUB_WORKSPACE/kernel-lamu-build.zip .
+
+      - name: Upload AnyKernel3 artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3-lamu-MotoG05
+          path: AnyKernel3/*
 
       - name: Upload build artifacts
         if: success()
@@ -479,18 +250,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: kernel-lamu-${{ github.run_number }}
-          name: Kernel Lamu KernelSU-Next Build #${{ github.run_number }}
+          name: Kernel Lamu Build #${{ github.run_number }}
           body: |
-            Automated kernel build for **Moto G05 (lamu)** with KernelSU-Next.
+            Automated kernel build for **Moto G05 (lamu)**.
 
             - **Defconfig**: mgk_64_k66_defconfig
             - **Build variant**: user
             - **Architecture**: arm64
             - **Kernel version**: kernel-6.6
-            - **KernelSU-Next version**: ${{ env.KSUVER }}
-            - **SUSFS**: ${{ github.event.inputs.SUSFS }}
-            - **Baseband-guard**: ${{ github.event.inputs.bbg }}
-            - **BBR**: ${{ github.event.inputs.bbr }}
           files: |
-            AnyKernel3-lamu-KernelSU-Next.zip
+            AnyKernel3-lamu.zip
             kernel-lamu-build.zip
