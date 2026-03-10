@@ -226,6 +226,7 @@ jobs:
           done
 
           # Fallback: search for drivers/Kconfig excluding vendor/device modules
+          # maxdepth=4 covers typical MTK kernel layouts: ./kernel-mtk/kernel-6.6/drivers/Kconfig
           if [ -z "$GKI_KERNEL_SRC" ]; then
             KCONFIG_PATH=$(find . -maxdepth 4 -name "Kconfig" -path "*/drivers/Kconfig" \
               -not -path "*/kernel_device_modules*" \
@@ -305,8 +306,14 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
 
           cd KernelSU-Next
-          KSU_VERSION=$(expr $(curl -sI "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/commits?sha=dev&per_page=1" \
-            | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p') "+" 30000)
+          COMMIT_COUNT=$(curl -sI "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/commits?sha=dev&per_page=1" \
+            | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p')
+          if [ -z "$COMMIT_COUNT" ] || ! [ "$COMMIT_COUNT" -eq "$COMMIT_COUNT" ] 2>/dev/null; then
+            echo "⚠️ Could not fetch commit count from GitHub API, using fallback version"
+            KSU_VERSION=31000
+          else
+            KSU_VERSION=$(expr "$COMMIT_COUNT" "+" 30000)
+          fi
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
 
@@ -345,17 +352,25 @@ jobs:
 
           if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "On" ]; then
             echo "📦 Applying Unicode zero-width bypass fix..."
-            patch -p1 < unicode_bypass_fix.patch || true
+            if ! patch -p1 < unicode_bypass_fix.patch; then
+              echo "⚠️ Unicode bypass patch had failures (some hunks may not apply on this kernel version)"
+            fi
           fi
 
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
             echo "📦 Applying SUSFS patch..."
-            patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" || true
+            if ! patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch"; then
+              echo "⚠️ SUSFS patch had failures (some hunks may not apply on this kernel version)"
+            fi
             cp "${KP_DIR}/kernel_patches/69_hide_stuff.patch" ./
-            patch -p1 -F 3 < 69_hide_stuff.patch || true
+            if ! patch -p1 -F 3 < 69_hide_stuff.patch; then
+              echo "⚠️ hide_stuff patch had failures (some hunks may not apply)"
+            fi
           else
             echo "📦 Applying manual hook patch..."
-            patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.6.patch || true
+            if ! patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.6.patch; then
+              echo "⚠️ Manual hook patch had failures (some hunks may not apply)"
+            fi
           fi
 
           echo "✅ All patches applied"
@@ -576,8 +591,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           cp "$GITHUB_WORKSPACE/AnyKernel3-lamu.zip" "$GITHUB_WORKSPACE/${{ steps.set_name.outputs.ARTIFACT_NAME }}.zip"
           git add -f "${{ steps.set_name.outputs.ARTIFACT_NAME }}.zip"
-          git commit -m "Add AnyKernel3 zip: ${{ steps.set_name.outputs.ARTIFACT_NAME }}" || true
-          git push || true
+          git commit -m "Add AnyKernel3 zip: ${{ steps.set_name.outputs.ARTIFACT_NAME }}" || echo "⚠️ Nothing to commit"
+          git push || echo "⚠️ Failed to push zip to repository (zip will still be available in release)"
 
       - name: "🚀 Create GitHub Release"
         if: success()
