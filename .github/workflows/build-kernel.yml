@@ -38,6 +38,8 @@ jobs:
         run: |
           my_top_dir=$PWD/kernel_platform
 
+          mkdir -vp $my_top_dir
+
           cd $my_top_dir/
 
           mkdir -vp $my_top_dir/external
