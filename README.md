@@ -112,8 +112,8 @@ ln -sf ../system system
 ln -sf ../vendor vendor
 ln -sf ../../build/bazel_common_rules build/bazel_common_rules
 
-# Setup WORKSPACE file
-cp build/kernel/kleaf/bazel.WORKSPACE WORKSPACE
+# Setup WORKSPACE file (MGK-specific, defines @mgk_info and vendor repos)
+cp build/bazel_mgk_rules/kleaf/bazel.WORKSPACE WORKSPACE
 
 KERNEL_ROOT_DIR=$PWD/..
 TARGET_PRODUCT=lamu

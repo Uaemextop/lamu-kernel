@@ -198,11 +198,17 @@ jobs:
 
           cd $my_top_dir
 
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-mtk.git -b android-15-release-vvta35 kernel
+          # kernel-mtk (GKI source) goes into kernel/kernel-6.6/ (Bazel package //kernel-6.6)
+          mkdir -p kernel
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-mtk.git -b android-15-release-vvta35 kernel/kernel-6.6
+          # Build system goes into kernel/build/ (workspace-level)
+          mkdir -p kernel/build
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-build-kernel.git -b android-15-release-vvta35 kernel/build/kernel
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-build-bazel_mgk_rules.git -b android-15-release-vvta35 kernel/build/bazel_mgk_rules
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-prebuilts-kernel-build-tools.git -b android-15-release-vvta35 prebuilts/kernel-build-tools
+          # Device modules go into kernel/kernel_device_modules-6.6/ (Bazel package //kernel_device_modules-6.6)
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-kernel_device_modules-6.6.git -b android-15-release-vvta35 kernel/kernel_device_modules-6.6
+          # Vendor modules
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt66xx.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt66xx
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt76xx-sdio
@@ -226,9 +232,6 @@ jobs:
 
           cd $my_top_dir/kernel
 
-          # Self-reference for //kernel-6.6: Bazel targets (GKI kernel source is the workspace root)
-          ln -sf . kernel-6.6
-
           # Link external dependencies into workspace
           ln -sf ../external external
 
@@ -245,42 +248,17 @@ jobs:
           ln -sf ../../build/bazel_common_rules build/bazel_common_rules
 
           echo "✅ Workspace symlinks created"
-          ls -la kernel-6.6 external prebuilts system vendor build/bazel_common_rules
+          ls -la external prebuilts system vendor build/bazel_common_rules
 
       - name: "🔍 Detect kernel source directory"
         run: |
           cd kernel_platform
 
-          # Find the GKI kernel source tree (contains drivers/Kconfig)
-          GKI_KERNEL_SRC=""
-          for candidate in \
-            "kernel-mtk/${LINUX_KERNEL_VERSION}" \
-            "kernel/${LINUX_KERNEL_VERSION}" \
-            "kernel-mtk" \
-            "kernel"; do
-            if [ -d "$candidate/drivers" ] && [ -f "$candidate/drivers/Kconfig" ]; then
-              GKI_KERNEL_SRC="$candidate"
-              break
-            fi
-          done
-
-          # Fallback: search for drivers/Kconfig excluding vendor/device modules
-          # maxdepth=4 covers typical MTK kernel layouts: ./kernel-mtk/kernel-6.6/drivers/Kconfig
-          if [ -z "$GKI_KERNEL_SRC" ]; then
-            KCONFIG_PATH=$(find . -maxdepth 4 -name "Kconfig" -path "*/drivers/Kconfig" \
-              -not -path "*/kernel_device_modules*" \
-              -not -path "*/vendor*" \
-              -not -path "*/external*" | head -1)
-            if [ -n "$KCONFIG_PATH" ]; then
-              GKI_KERNEL_SRC=$(dirname "$(dirname "$KCONFIG_PATH")" | sed 's|^\./||')
-            fi
-          fi
-
-          if [ -z "$GKI_KERNEL_SRC" ]; then
-            echo "❌ ERROR: Could not find kernel source directory"
-            echo "Directory listing:"
-            ls -la
-            find . -maxdepth 3 -name "Kconfig" -path "*/drivers/Kconfig" 2>/dev/null || true
+          # GKI source is at kernel/kernel-6.6 (kernel-mtk cloned into workspace/kernel-6.6)
+          GKI_KERNEL_SRC="kernel/${LINUX_KERNEL_VERSION}"
+          if [ ! -f "${GKI_KERNEL_SRC}/drivers/Kconfig" ]; then
+            echo "❌ ERROR: Could not find kernel source at ${GKI_KERNEL_SRC}"
+            ls -la kernel/
             exit 1
           fi
 
@@ -288,15 +266,13 @@ jobs:
           echo "GKI_KERNEL_SRC=${GKI_KERNEL_SRC}" >> $GITHUB_ENV
 
           # Find the GKI defconfig
-          GKI_DEFCONFIG=""
-          if [ -f "${GKI_KERNEL_SRC}/arch/arm64/configs/gki_defconfig" ]; then
-            GKI_DEFCONFIG="${GKI_KERNEL_SRC}/arch/arm64/configs/gki_defconfig"
-          else
-            GKI_DEFCONFIG=$(find . -name "gki_defconfig" -path "*/arm64/configs/*" \
-              -not -path "*/kernel_device_modules*" | head -1 | sed 's|^\./||')
+          GKI_DEFCONFIG="${GKI_KERNEL_SRC}/arch/arm64/configs/gki_defconfig"
+          if [ ! -f "$GKI_DEFCONFIG" ]; then
+            echo "⚠️ gki_defconfig not found at ${GKI_DEFCONFIG}, searching..."
+            GKI_DEFCONFIG=$(find "${GKI_KERNEL_SRC}" -name "gki_defconfig" -path "*/arm64/configs/*" | head -1)
           fi
 
-          if [ -z "$GKI_DEFCONFIG" ]; then
+          if [ -z "$GKI_DEFCONFIG" ] || [ ! -f "$GKI_DEFCONFIG" ]; then
             echo "⚠️ gki_defconfig not found, will search again before config step"
           else
             echo "✅ Found GKI defconfig at: ${GKI_DEFCONFIG}"
@@ -547,8 +523,8 @@ jobs:
 
           cd ${KERNEL_ROOT_DIR}/kernel
 
-          # Setup WORKSPACE file required by Bazel (replaces AOSP manifest linkfile)
-          cp build/kernel/kleaf/bazel.WORKSPACE WORKSPACE
+          # Setup WORKSPACE file required by Bazel (MGK-specific, defines @mgk_info and vendor repos)
+          cp build/bazel_mgk_rules/kleaf/bazel.WORKSPACE WORKSPACE
 
           # Use git-cloned build/kernel/kleaf/bazel.py directly (no symlinks)
           # The build repo was already cloned via git clone in an earlier step
