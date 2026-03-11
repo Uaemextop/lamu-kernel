@@ -233,6 +233,10 @@ jobs:
           # Link system tools into workspace
           ln -sf ../system system
 
+          # Link tools/mkbootimg into workspace (Bazel expects //tools/mkbootimg)
+          mkdir -p tools
+          ln -sf ../../system/tools/mkbootimg tools/mkbootimg
+
           # Link vendor modules into workspace
           ln -sf ../vendor vendor
 
@@ -240,7 +244,7 @@ jobs:
           ln -sf ../../build/bazel_common_rules build/bazel_common_rules
 
           echo "✅ Workspace symlinks created"
-          ls -la external prebuilts system vendor build/bazel_common_rules
+          ls -la external prebuilts system vendor build/bazel_common_rules tools/mkbootimg
 
       - name: "🔍 Detect kernel source directory"
         run: |
