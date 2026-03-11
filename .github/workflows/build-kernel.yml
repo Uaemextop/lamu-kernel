@@ -149,7 +149,9 @@ jobs:
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/build-tools -b android15-release
 
-          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release
+          mkdir -vp $my_top_dir/prebuilts/jdk
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release $my_top_dir/prebuilts/jdk/jdk11
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/rust -b android15-release
 
@@ -178,7 +180,7 @@ jobs:
           cd $my_top_dir/prebuilts/ndk/
 
           git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025
-          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-build-2023
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-2025
 
       - name: "⬇️ Clone kernel source code"
         run: |
