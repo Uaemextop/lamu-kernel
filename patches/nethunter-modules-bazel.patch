@@ -1,9 +1,10 @@
 --- a/kernel/kleaf/mgk_modules.bzl
 +++ b/kernel/kleaf/mgk_modules.bzl
-@@ -41,4 +41,67 @@
- ]
+@@ -3,5 +3,69 @@
+ COMMON_GKI_MODULES_LIST = get_gki_modules_list("arm64") + get_kunit_modules_list("arm64")
  
- mgk_module_user_outs = mgk_module_ext_outs + [
+-mgk_module_outs = COMMON_GKI_MODULES_LIST
++mgk_module_outs = COMMON_GKI_MODULES_LIST + [
 +    # Nethunter: Bluetooth HCI USB drivers + dependencies
 +    "drivers/bluetooth/bcm203x.ko",
 +    "drivers/bluetooth/bfusb.ko",
@@ -67,4 +68,6 @@
 +    "drivers/media/tuners/xc2028.ko",
 +    "drivers/media/tuners/xc4000.ko",
 +    "drivers/media/tuners/xc5000.ko",
- ]
++]
+ 
+ mgk_module_ext_outs = [
