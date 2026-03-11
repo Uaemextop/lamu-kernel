@@ -751,6 +751,8 @@ jobs:
 
           # Setup WORKSPACE file required by Bazel (MGK-specific, defines @mgk_info and vendor repos)
           cp build/bazel_mgk_rules/kleaf/bazel.WORKSPACE WORKSPACE
+          # Fix vendor paths: manifest places vendor/ directly under kernel/, so drop the "../" prefix
+          sed -i 's|path="../vendor/|path="vendor/|g' WORKSPACE
 
           # Use git-cloned build/kernel/kleaf/bazel.py directly (no symlinks)
           # The build repo was already cloned via git clone in an earlier step
