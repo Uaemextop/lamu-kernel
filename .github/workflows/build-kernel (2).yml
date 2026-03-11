@@ -1,0 +1,848 @@
+name: Build Kernel with KernelSU Next
+
+on:
+  workflow_dispatch:
+    inputs:
+      SUSFS:
+        description: "Enable SUSFS (hide KernelSU from detection)"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'On'
+
+      bbg:
+        description: "Enable BBG (Baseband Guard protection)"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'On'
+
+      bbr:
+        description: "Enable BBR network congestion algorithm"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'Off'
+
+      proxy:
+        description: "Enable proxy performance optimization (disable for MTK chips)"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'Off'
+
+      UNICODE_BYPASS:
+        description: "Enable Unicode zero-width bypass fix"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'Off'
+
+jobs:
+  build:
+    name: Lamu KernelSU Next (SUSFS ${{ github.event.inputs.SUSFS }})
+    runs-on: aapt2
+
+    permissions:
+      contents: write
+
+    env:
+      TARGET_PRODUCT: lamu
+      KERNEL_DEFCONFIG: mgk_64_k66_defconfig
+      KERNEL_BUILD_VARIANT: user
+      KERNEL_TARGET_ARCH: arm64
+      KERNEL_DIR: kernel/kernel_device_modules-6.6
+      LINUX_KERNEL_VERSION: kernel-6.6
+      ANDROID_VERSION: android15
+      KERNEL_VERSION: '6.6'
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+      CCACHE_MAXSIZE: 8G
+
+    steps:
+      - name: "🚀 Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: "🔐 Configure Git"
+        run: |
+          git config --global user.name "build"
+          git config --global user.email "build@lamu-kernel"
+
+      - name: "📦 Install dependencies"
+        run: |
+          sudo apt-get update
+          sudo apt-get install git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python3
+          sudo apt-get install -y \
+            bc bison build-essential flex libelf-dev libssl-dev \
+            libncurses-dev python3 git curl wget rsync cpio zip unzip \
+            ccache gawk dos2unix git curl ca-certificates build-essential clang lld flex bison \
+            libelf-dev libssl-dev libncurses-dev zlib1g-dev liblz4-tool \
+            libxml2-utils rsync unzip dwarves file python3 ccache unifdef
+
+      
+      - name: Install Repo Tool
+        run: |
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
+          chmod a+x ~/repo
+          sudo mv ~/repo /usr/local/bin/repo
+          
+      - name: "⬇️ Clone external dependencies"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          mkdir -vp $my_top_dir/external
+          mkdir -vp $my_top_dir/prebuilts/bazel/linux-x86_64
+          mkdir -vp $my_top_dir/external/python/absl-py
+
+          cd $my_top_dir/external
+
+          pids=()
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/libcap -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/libcap-ng -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/bazel-skylib -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/bazelbuild-rules_cc -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/bazelbuild-rules_license -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/bazelbuild-rules_pkg -b main-kernel & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/bazelbuild-rules_python -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/bazelbuild-rules_rust -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/stardoc -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/zopfli -b android15-release & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/pigz -b main-kernel & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/prebuilts/bazel/linux-x86_64 -b android15-release $my_top_dir/prebuilts/bazel/linux-x86_64 & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/external/python/absl-py -b android15-release $my_top_dir/external/python/absl-py & pids+=($!)
+          for pid in "${pids[@]}"; do wait "$pid" || exit 1; done
+
+      - name: "⬇️ Clone prebuilts - Clang and GCC"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          mkdir -vp $my_top_dir/prebuilts/clang/host
+          mkdir -vp $my_top_dir/prebuilts/gcc/linux-x86/host
+
+          pids=()
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android15-release $my_top_dir/prebuilts/clang/host/linux-x86 & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 -b android15-release $my_top_dir/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 & pids+=($!)
+          for pid in "${pids[@]}"; do wait "$pid" || exit 1; done
+
+      - name: "⬇️ Clone prebuilts - build-tools, jdk, rust, clang-tools"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          mkdir -vp $my_top_dir/prebuilts/jdk
+
+          pids=()
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/prebuilts/build-tools -b android15-release $my_top_dir/prebuilts/build-tools & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release $my_top_dir/prebuilts/jdk/jdk11 & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/prebuilts/rust -b android15-release $my_top_dir/prebuilts/rust & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/prebuilts/clang-tools -b android15-release $my_top_dir/prebuilts/clang-tools & pids+=($!)
+          for pid in "${pids[@]}"; do wait "$pid" || exit 1; done
+
+      - name: "⬇️ Clone build rules and system tools"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          mkdir -vp $my_top_dir/build/
+          mkdir -vp $my_top_dir/system/tools/
+
+          pids=()
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/build/bazel_common_rules -b android15-release $my_top_dir/build/bazel_common_rules & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/platform/system/tools/mkbootimg -b android15-release $my_top_dir/system/tools/mkbootimg & pids+=($!)
+          for pid in "${pids[@]}"; do wait "$pid" || exit 1; done
+
+      - name: "⬇️ Clone prebuilts - NDK"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          pids=()
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025 $my_top_dir/prebuilts/ndk-r26 & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-build-2023 $my_top_dir/prebuilts/ndk-r23 & pids+=($!)
+          for pid in "${pids[@]}"; do wait "$pid" || exit 1; done
+
+      - name: "⬇️ Clone kernel source code"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir
+
+          # Create all required parent directories upfront
+          mkdir -p kernel/build
+          mkdir -p prebuilts
+          mkdir -p vendor/mediatek/kernel_modules/connectivity/wlan/core
+          mkdir -p vendor/mediatek/kernel_modules/connectivity/wlan/adaptor
+          mkdir -p vendor/mediatek/kernel_modules/connectivity/bt
+          mkdir -p vendor/mediatek/kernel_modules/gpu
+          mkdir -p vendor/mediatek/kernel_modules/met_drv_v3
+          mkdir -p vendor/mediatek/kernel_modules/met_drv_v2
+          mkdir -p vendor/mediatek/kernel_modules/udc
+          mkdir -p vendor/mediatek/kernel_modules/mtkcam
+          mkdir -p vendor/mediatek/kernel_modules/afs_common_utils
+
+          pids=()
+          # kernel-mtk (GKI source) goes into kernel/kernel-6.6/ (Bazel package //kernel-6.6)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/kernel-mtk.git -b android-15-release-vvta35 kernel/kernel-6.6 & pids+=($!)
+          # Build system goes into kernel/build/ (workspace-level)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/kernel-build-kernel.git -b android-15-release-vvta35 kernel/build/kernel & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/kernel-build-bazel_mgk_rules.git -b android-15-release-vvta35 kernel/build/bazel_mgk_rules & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/kernel-prebuilts-kernel-build-tools.git -b android-15-release-vvta35 prebuilts/kernel-build-tools & pids+=($!)
+          # Device modules go into kernel/kernel_device_modules-6.6/ (Bazel package //kernel_device_modules-6.6)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/kernel-kernel_device_modules-6.6.git -b android-15-release-vvta35 kernel/kernel_device_modules-6.6 & pids+=($!)
+          # Vendor modules
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt66xx.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt66xx & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt76xx-sdio & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-common.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/common & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-connfem.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/connfem & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-conninfra.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/conninfra & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-fmradio.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/fmradio & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-gps.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/gps & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-adaptor.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/wlan/adaptor & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-gpu.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/gpu & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v3.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/met_drv_v3 & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v2.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/met_drv_v2 & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-udc.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/udc & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-linux_v2.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/linux_v2 & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-mtkcam.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/mtkcam & pids+=($!)
+          git clone --depth 1 --single-branch --no-tags https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-afs_common_utils.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/afs_common_utils & pids+=($!)
+          for pid in "${pids[@]}"; do wait "$pid" || exit 1; done
+
+      - name: "🔗 Create workspace symlinks"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir/kernel
+
+          # Link external dependencies into workspace
+          ln -sf ../external external
+
+          # Link prebuilts into workspace
+          ln -sf ../prebuilts prebuilts
+
+          # Link system tools into workspace
+          ln -sf ../system system
+
+          # Link tools/mkbootimg into workspace (Bazel expects //tools/mkbootimg)
+          mkdir -p tools
+          ln -sf ../../system/tools/mkbootimg tools/mkbootimg
+
+          # Link vendor modules into workspace
+          ln -sf ../vendor vendor
+
+          # Link build/bazel_common_rules (build/ dir already has build/kernel and build/bazel_mgk_rules)
+          ln -sf ../../build/bazel_common_rules build/bazel_common_rules
+
+          echo "✅ Workspace symlinks created"
+          ls -la external prebuilts system vendor build/bazel_common_rules tools/mkbootimg
+
+      - name: "🔍 Detect kernel source directory"
+        run: |
+          cd kernel_platform
+
+          # GKI source is at kernel/kernel-6.6 (kernel-mtk cloned into workspace/kernel-6.6)
+          GKI_KERNEL_SRC="kernel/${LINUX_KERNEL_VERSION}"
+          if [ ! -f "${GKI_KERNEL_SRC}/drivers/Kconfig" ]; then
+            echo "❌ ERROR: Could not find kernel source at ${GKI_KERNEL_SRC}"
+            ls -la kernel/
+            exit 1
+          fi
+
+          echo "✅ Found GKI kernel source at: kernel_platform/${GKI_KERNEL_SRC}"
+          echo "GKI_KERNEL_SRC=${GKI_KERNEL_SRC}" >> $GITHUB_ENV
+
+          # Find the GKI defconfig
+          GKI_DEFCONFIG="${GKI_KERNEL_SRC}/arch/arm64/configs/gki_defconfig"
+          if [ ! -f "$GKI_DEFCONFIG" ]; then
+            echo "⚠️ gki_defconfig not found at ${GKI_DEFCONFIG}, searching..."
+            GKI_DEFCONFIG=$(find "${GKI_KERNEL_SRC}" -name "gki_defconfig" -path "*/arm64/configs/*" | head -1)
+          fi
+
+          if [ -z "$GKI_DEFCONFIG" ] || [ ! -f "$GKI_DEFCONFIG" ]; then
+            echo "⚠️ gki_defconfig not found, will search again before config step"
+          else
+            echo "✅ Found GKI defconfig at: ${GKI_DEFCONFIG}"
+          fi
+          echo "GKI_DEFCONFIG=${GKI_DEFCONFIG}" >> $GITHUB_ENV
+
+      - name: "🔧 Setup version strings"
+        run: |
+          cd kernel_platform/${GKI_KERNEL_SRC}
+
+          # Remove protected exports from kernel source (prevents ABI check failures)
+          rm -f android/abi_gki_protected_exports_* || true
+          rm -f android/abi_gki_protected_exports || true
+          find . -name "abi_gki_protected_exports*" -delete 2>/dev/null || true
+          echo "✅ Removed abi_gki_protected_exports"
+
+          # Remove -dirty from version strings
+          if [ -f scripts/setlocalversion ]; then
+            sed -i 's/ -dirty//g' scripts/setlocalversion
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' scripts/setlocalversion
+          fi
+
+          # Customize version suffix for 6.6 kernel
+          if [ -f arch/arm64/configs/gki_defconfig ]; then
+            ESCAPED_SUFFIX=$(printf '%s\n' "-${ANDROID_VERSION}-lamu-ksu" | sed 's:[\/&]:\\&:g')
+            sed -i "s/-4k/$ESCAPED_SUFFIX/g" arch/arm64/configs/gki_defconfig || true
+          fi
+
+          if [ -f scripts/setlocalversion ]; then
+            sed -i 's/${scm_version}//' scripts/setlocalversion || true
+          fi
+
+          echo "✅ Version strings configured"
+
+      - name: "⚡ Setup Baseband-guard"
+        if: ${{ github.event.inputs.bbg == 'On' }}
+        run: |
+          cd kernel_platform/${GKI_KERNEL_SRC}
+          echo "🛠️ Setting up Baseband-guard..."
+          curl -sSL https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh -o setup_bbg.sh
+          bash setup_bbg.sh
+          echo "✅ Baseband-guard configured"
+
+      - name: "⚡ Setup KernelSU Next"
+        run: |
+          cd kernel_platform/${GKI_KERNEL_SRC}
+
+          echo "🛠️ Setting up KernelSU Next as git submodule..."
+
+          # Add KernelSU-Next as a git submodule (ensures proper git metadata)
+          git submodule add --force https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
+          git submodule update --init --recursive
+
+          # Checkout the latest tag (like the original setup.sh does)
+          cd KernelSU-Next
+          LATEST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "")
+          if [ -n "$LATEST_TAG" ]; then
+            git checkout "$LATEST_TAG"
+            echo "Checked out tag: $LATEST_TAG"
+          fi
+          cd ..
+
+          # Create symlink from drivers/kernelsu to KernelSU-Next/kernel
+          DRIVER_DIR="drivers"
+          if [ ! -d "KernelSU-Next/kernel" ]; then
+            echo "❌ ERROR: KernelSU-Next/kernel directory not found after submodule init"
+            exit 1
+          fi
+          ln -sf "$(realpath --relative-to="$DRIVER_DIR" "KernelSU-Next/kernel")" "$DRIVER_DIR/kernelsu"
+
+          # Register KernelSU in kernel build system
+          grep -q "kernelsu" "$DRIVER_DIR/Makefile" || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> "$DRIVER_DIR/Makefile"
+          grep -q 'source "drivers/kernelsu/Kconfig"' "$DRIVER_DIR/Kconfig" || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' "$DRIVER_DIR/Kconfig"
+
+          cd KernelSU-Next/kernel
+          COMMITS_COUNT=$(/usr/bin/git rev-list --count HEAD)
+
+          if [ "$COMMITS_COUNT" -lt 2684 ]; then
+            BASE_VERSION=10200
+          else
+            BASE_VERSION=30000
+          fi
+
+          KSU_VERSION=$(expr "$COMMITS_COUNT" "+" "$BASE_VERSION")
+          sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" Makefile
+
+          if [ "$KSU_VERSION" -lt 12884 ]; then
+            echo "NEED_HOOKS=true" >> $GITHUB_ENV
+          else
+            echo "NEED_HOOKS=false" >> $GITHUB_ENV
+          fi
+
+          # Get tag for version info
+          KSU_TAG=$(cd .. && git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")
+
+          # Inject pre-computed version info into Kbuild for Bazel sandbox compatibility
+          # (Bazel sandbox strips .git directories, making git commands fail during build)
+          {
+            echo "# Pre-computed version info (avoids git dependency in Bazel sandbox)"
+            echo "KSU_GIT_VERSION := ${COMMITS_COUNT}"
+            echo "KSU_GIT_TAG := ${KSU_TAG}"
+            echo "KSU_GIT_VERSION_VALID := 1"
+            echo ""
+            cat Kbuild
+          } > Kbuild.tmp && mv Kbuild.tmp Kbuild
+
+          cd ..
+          KSUN_COMMIT_SHA=$(git rev-parse HEAD)
+          echo "KSUN_COMMIT_SHA=$KSUN_COMMIT_SHA" >> $GITHUB_ENV
+          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+
+          echo "KernelSU Next Version: $KSU_VERSION"
+          echo "KernelSU Next added as submodule (commit: ${KSUN_COMMIT_SHA:0:8}) ✅"
+
+      - name: "🔧 Setup and apply patches"
+        run: |
+          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
+          cd "$KP_DIR"
+
+          echo "⬇️ Downloading patches..."
+          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
+            git clone --depth 1 --single-branch --no-tags https://github.com/cctv18/susfs4oki.git \
+              -b "oki-${ANDROID_VERSION}-${KERNEL_VERSION}"
+          fi
+          git clone --depth 1 https://github.com/TheWildJames/kernel_patches.git
+          git clone --depth 1 --single-branch --no-tags https://github.com/ShirkNeko/SukiSU_patch.git
+
+          KSRC="${KP_DIR}/${GKI_KERNEL_SRC}"
+
+          if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "On" ]; then
+            cp "${KP_DIR}/kernel_patches/common/unicode_bypass_fix_6.1+.patch" "${KSRC}/unicode_bypass_fix.patch"
+          fi
+
+          echo "🔧 Applying patches..."
+          cd "${KSRC}"
+
+          if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "On" ]; then
+            echo "📦 Applying Unicode zero-width bypass fix..."
+            if ! patch -p1 < unicode_bypass_fix.patch; then
+              echo "⚠️ Unicode bypass patch had failures"
+            fi
+          fi
+
+          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
+            echo "📦 Applying SUSFS patches..."
+
+            # Copy SUSFS files to kernel source
+            cp "${KP_DIR}/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" ./
+            cp "${KP_DIR}/susfs4oki/kernel_patches/fs/"* ./fs/ || true
+            cp "${KP_DIR}/susfs4oki/kernel_patches/include/linux/"* ./include/linux/ || true
+
+            # Get SUSFS version
+            cd KernelSU-Next
+            SUSFS_VERSION=$(grep '#define SUSFS_VERSION' ../include/linux/susfs.h | awk -F'"' '{print $2}')
+            echo "SUSVER=$SUSFS_VERSION" >> $GITHUB_ENV
+            echo "SuSFS Version: $SUSFS_VERSION"
+            cd ..
+
+            # Compare semantic versions: returns true if $1 <= $2
+            version_lte() {
+              [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$1" ]
+            }
+
+            if version_lte "${SUSFS_VERSION:1}" "1.5.12"; then
+              echo "NEED_HOOKS=true" >> $GITHUB_ENV
+            else
+              echo "NEED_HOOKS=false" >> $GITHUB_ENV
+            fi
+
+            # Apply SUSFS KernelSU integration patch with version-specific fix
+            case "$SUSFS_VERSION" in
+              "v1.5.8")
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch || true
+                for p in fix_apk_sign.c.patch fix_core_hook.c.patch fix_selinux.c.patch fix_ksud.c.patch; do
+                  cp "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/$p" ./
+                  patch -p1 --forward --fuzz=3 < "$p"
+                done
+                ;;
+              "v1.5.9"|"v1.5.10"|"v1.5.11"|"v1.5.12")
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -printf "%f\n" | cut -d'.' -f1); do
+                  echo "Patching file: $file.c with fix_$file.c.patch"
+                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.c.patch"
+                done
+                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_kernel_compat.c.patch"
+                ;;
+              "v2.0.0")
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+
+                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+                  echo "Patching file: $file with fix_$file.patch"
+                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
+                done
+                echo "Patching Hook Mode!"
+                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/overwrite_hook_mode.patch"
+                echo "Patching KSU_TOOLKIT Support for SuSFS kernel!"
+                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/ksu_toolkit.patch"
+                ;;
+              *)
+                echo "⚠️ Unsupported SUSFS version: $SUSFS_VERSION, trying generic approach"
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+                  FIX="${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
+                  [ -f "$FIX" ] && patch -p1 --forward < "$FIX" || true
+                done
+                ;;
+            esac
+            patch -p1 --forward < ksun_susfs_latest.patch || true
+
+            # Clean up reject files
+            find ./kernel -name "*.rej" -delete 2>/dev/null || true
+            cd "${KSRC}"
+
+            # Fake kernel patch to fix task_mmu.c failures (android15-6.6)
+            compat_workaround=0
+            if [ "${ANDROID_VERSION}" = "android15" ] && [ "${KERNEL_VERSION}" = "6.6" ]; then
+              if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                echo "Applying android15-6.6 compatibility workaround for task_mmu.c..."
+                sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' \
+                       -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
+                compat_workaround=1
+              fi
+            fi
+
+            # Apply SUSFS kernel patch
+            echo "📦 Applying SUSFS GKI kernel patch..."
+            patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch"
+
+            # Revert Fake kernel patch
+            if [ "$compat_workaround" = 1 ]; then
+              if [ "${ANDROID_VERSION}" = "android15" ] && [ "${KERNEL_VERSION}" = "6.6" ]; then
+                if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                  echo "Reverting android15-6.6 compatibility workaround..."
+                  sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' \
+                         -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
+                fi
+              fi
+            fi
+
+            # Apply hide_stuff patch
+            cp "${KP_DIR}/kernel_patches/69_hide_stuff.patch" ./
+            if ! patch -p1 -F 3 < 69_hide_stuff.patch; then
+              echo "⚠️ hide_stuff patch had failures"
+            fi
+
+            echo "SuSFS added ✅"
+          else
+            echo "📦 Applying manual hook patch..."
+            cp "${KP_DIR}/kernel_patches/next/scope_min_manual_hooks_v1.6.patch" ./
+            if ! patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.6.patch; then
+              echo "⚠️ Manual hook patch had failures"
+            fi
+          fi
+
+          # Apply build fix patches from repository (unifdef fallback for headers_install)
+          echo "🔧 Applying build fix patches..."
+          if [ -f "${GITHUB_WORKSPACE}/patches/fix-headers-unifdef.patch" ]; then
+            echo "📦 Applying headers_install.sh unifdef fallback fix..."
+            patch -p1 --forward < "${GITHUB_WORKSPACE}/patches/fix-headers-unifdef.patch" || true
+          fi
+
+          echo "✅ All patches applied"
+
+      - name: "⚙️ Configure kernel options"
+        run: |
+          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
+          cd "$KP_DIR"
+
+          # Determine defconfig path
+          DEFCONFIG="${GKI_DEFCONFIG}"
+          if [ -z "$DEFCONFIG" ] || [ ! -f "$DEFCONFIG" ]; then
+            DEFCONFIG="${GKI_KERNEL_SRC}/arch/arm64/configs/gki_defconfig"
+          fi
+          if [ ! -f "$DEFCONFIG" ]; then
+            DEFCONFIG=$(find . -name "gki_defconfig" -path "*/arm64/configs/*" | head -1)
+          fi
+
+          if [ -z "$DEFCONFIG" ] || [ ! -f "$DEFCONFIG" ]; then
+            echo "❌ ERROR: Could not find gki_defconfig"
+            exit 1
+          fi
+
+          echo "⚙️ Modifying defconfig: $DEFCONFIG"
+
+          SCRIPTS_CONFIG="${GKI_KERNEL_SRC}/scripts/config"
+
+          # KernelSU-Next and SUSFS configuration
+          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
+            echo "📦 Enabling KernelSU + SUSFS..."
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_KSU \
+              --disable CONFIG_KSU_KPROBES_HOOK \
+              --enable CONFIG_KSU_SUSFS \
+              --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
+              --enable CONFIG_KSU_SUSFS_SUS_PATH \
+              --enable CONFIG_KSU_SUSFS_SUS_MOUNT \
+              --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT \
+              --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT \
+              --enable CONFIG_KSU_SUSFS_SUS_KSTAT \
+              --disable CONFIG_KSU_SUSFS_SUS_OVERLAYFS \
+              --enable CONFIG_KSU_SUSFS_TRY_UMOUNT \
+              --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT \
+              --enable CONFIG_KSU_SUSFS_SPOOF_UNAME \
+              --enable CONFIG_KSU_SUSFS_ENABLE_LOG \
+              --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+              --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+              --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+              --enable CONFIG_KSU_SUSFS_SUS_MAP \
+              --disable CONFIG_KSU_SUSFS_SUS_SU \
+              --enable CONFIG_TMPFS_XATTR \
+              --enable CONFIG_TMPFS_POSIX_ACL
+          else
+            echo "📦 Enabling KernelSU with manual hook..."
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_KSU \
+              --disable CONFIG_KSU_SUSFS \
+              --enable CONFIG_KSU_MANUAL_HOOK \
+              --enable CONFIG_TMPFS_XATTR \
+              --enable CONFIG_TMPFS_POSIX_ACL
+          fi
+
+          # Baseband Guard
+          if [ "${{ github.event.inputs.bbg }}" == "On" ]; then
+            echo "⚡ Enabling BBG..."
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" --enable CONFIG_BBG
+            # BBG requires 'baseband_guard' in CONFIG_LSM (checked at build-time by its Makefile)
+            CURRENT_LSM=$(sed -n 's/^CONFIG_LSM="\(.*\)"/\1/p' "${DEFCONFIG}")
+            if [ -n "$CURRENT_LSM" ]; then
+              if ! echo "$CURRENT_LSM" | grep -q "baseband_guard"; then
+                $SCRIPTS_CONFIG --file "${DEFCONFIG}" --set-str CONFIG_LSM "${CURRENT_LSM},baseband_guard"
+              fi
+            else
+              $SCRIPTS_CONFIG --file "${DEFCONFIG}" --set-str CONFIG_LSM "landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"
+            fi
+          fi
+
+          # BBR network algorithm
+          if [ "${{ github.event.inputs.bbr }}" == "On" ]; then
+            echo "🌐 Enabling BBR..."
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_TCP_CONG_ADVANCED \
+              --enable CONFIG_TCP_CONG_BBR \
+              --enable CONFIG_NET_SCH_FQ \
+              --disable CONFIG_TCP_CONG_BIC \
+              --disable CONFIG_TCP_CONG_WESTWOOD \
+              --disable CONFIG_TCP_CONG_HTCP
+          fi
+
+          # Proxy performance optimization
+          if [ "${{ github.event.inputs.proxy }}" == "On" ]; then
+            echo "🔧 Enabling proxy optimization..."
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_BPF_STREAM_PARSER \
+              --enable CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+              --enable CONFIG_NETFILTER_XT_SET \
+              --enable CONFIG_IP_SET \
+              --set-val CONFIG_IP_SET_MAX 65534 \
+              --enable CONFIG_IP_SET_BITMAP_IP \
+              --enable CONFIG_IP_SET_BITMAP_IPMAC \
+              --enable CONFIG_IP_SET_BITMAP_PORT \
+              --enable CONFIG_IP_SET_HASH_IP \
+              --enable CONFIG_IP_SET_HASH_IPMARK \
+              --enable CONFIG_IP_SET_HASH_IPPORT \
+              --enable CONFIG_IP_SET_HASH_IPPORTIP \
+              --enable CONFIG_IP_SET_HASH_IPPORTNET \
+              --enable CONFIG_IP_SET_HASH_IPMAC \
+              --enable CONFIG_IP_SET_HASH_MAC \
+              --enable CONFIG_IP_SET_HASH_NETPORTNET \
+              --enable CONFIG_IP_SET_HASH_NET \
+              --enable CONFIG_IP_SET_HASH_NETNET \
+              --enable CONFIG_IP_SET_HASH_NETPORT \
+              --enable CONFIG_IP_SET_HASH_NETIFACE \
+              --enable CONFIG_IP_SET_LIST_SET \
+              --enable CONFIG_IP6_NF_NAT \
+              --enable CONFIG_IP6_NF_TARGET_MASQUERADE
+          fi
+
+          # O2 optimization for 6.6
+          $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+            --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+
+          # Disable defconfig check
+          if [ -f "${GKI_KERNEL_SRC}/build.config.gki" ]; then
+            sed -i 's/check_defconfig//' "${GKI_KERNEL_SRC}/build.config.gki"
+          fi
+
+          echo "✅ Kernel options configured"
+
+      - name: "🔧 Pre-build unifdef"
+        run: |
+          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
+          GKI_SRC="${KP_DIR}/${GKI_KERNEL_SRC}"
+
+          echo "🔧 Building unifdef for kernel headers installation..."
+
+          # Pre-compile unifdef from kernel source so it's available in
+          # the Bazel sandbox. The fix-headers-unifdef.patch also patches
+          # headers_install.sh to fall back to system unifdef.
+          if [ -f "${GKI_SRC}/scripts/unifdef.c" ]; then
+            cc -o "${GKI_SRC}/scripts/unifdef" "${GKI_SRC}/scripts/unifdef.c"
+            chmod +x "${GKI_SRC}/scripts/unifdef"
+            echo "✅ Pre-compiled unifdef from kernel source"
+          elif command -v unifdef >/dev/null 2>&1; then
+            cp "$(command -v unifdef)" "${GKI_SRC}/scripts/unifdef"
+            chmod +x "${GKI_SRC}/scripts/unifdef"
+            echo "✅ Copied system unifdef to kernel scripts/"
+          fi
+
+          # Remove abi_gki_protected_exports (in case they were regenerated by patches)
+          rm -f "${GKI_SRC}/android/abi_gki_protected_exports_"* 2>/dev/null || true
+
+          echo "✅ Pre-build fixes ready"
+
+      - name: "🔨 Build kernel with Bazel"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir
+
+          KERNEL_ROOT_DIR=$PWD
+          KERNEL_BAZEL_BUILD_OUT=out/target/product/${TARGET_PRODUCT}/obj/KLEAF_OBJ
+          KERNEL_BAZEL_DIST_OUT=out/target/product/${TARGET_PRODUCT}/obj/KLEAF_OBJ/dist
+
+          export BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+          export DEFCONFIG_OVERLAYS="mt6768_overlay.config lamu_overlay.config"
+          export KERNEL_VERSION=kernel-6.6
+          export SOURCE_DATE_EPOCH=0
+          export JAVA_HOME=${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86
+          export PATH="${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86/bin:${PATH}"
+
+          PRIVATE_BAZEL_BUILD_FLAG="--//build/bazel_mgk_rules:kernel_version=${LINUX_KERNEL_VERSION#kernel-} --experimental_writable_outputs --noenable_bzlmod --config=stamp --repo_manifest=${KERNEL_ROOT_DIR}/${KERNEL_DIR}/fake_manifest.xml --sandbox_debug --verbose_failures"
+
+          my_kernel_target=${KERNEL_DEFCONFIG%_defconfig}
+
+          PRIVATE_BAZEL_BUILD_GOAL="//${KERNEL_DIR#kernel/}:${my_kernel_target}_customer_modules_install.${KERNEL_BUILD_VARIANT}"
+
+          PRIVATE_BAZEL_DIST_GOAL="//${KERNEL_DIR#kernel/}:${my_kernel_target}_customer_dist.${KERNEL_BUILD_VARIANT}"
+
+          cd ${KERNEL_ROOT_DIR}/kernel
+
+          # Setup WORKSPACE file required by Bazel (MGK-specific, defines @mgk_info and vendor repos)
+          cp build/bazel_mgk_rules/kleaf/bazel.WORKSPACE WORKSPACE
+
+          # Use git-cloned build/kernel/kleaf/bazel.py directly (no symlinks)
+          # The build repo was already cloned via git clone in an earlier step
+          KLEAF_REPO_DIR=$(build/kernel/gettop.sh) || { echo "❌ Failed to determine repo root via gettop.sh"; exit 1; }
+          echo "✅ Workspace root: $KLEAF_REPO_DIR"
+          export PYTHONPATH="$(pwd)/build/kernel/kleaf:${PYTHONPATH:-}"
+
+          python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
+            --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
+            --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
+            build ${PRIVATE_BAZEL_BUILD_FLAG} ${PRIVATE_BAZEL_BUILD_GOAL}
+
+          python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
+            --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
+            --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
+            run ${PRIVATE_BAZEL_BUILD_FLAG} --nokmi_symbol_list_violations_check ${PRIVATE_BAZEL_DIST_GOAL} \
+            -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}
+
+          python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
+            --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
+            --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
+            run ${PRIVATE_BAZEL_BUILD_FLAG} \
+            //${LINUX_KERNEL_VERSION}:kernel_aarch64_abi_dist \
+            -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}/abi
+
+          echo "✅ Kernel build complete"
+
+      - name: "📦 Package AnyKernel3"
+        if: success()
+        run: |
+          echo "📦 Preparing AnyKernel3 package..."
+          mkdir -p kernel_platform/out/Final-Image-Find/
+
+          image_path=$(find kernel_platform/ -name "Image" -type f | head -n 1)
+          if [ -n "$image_path" ] && [ -f "$image_path" ]; then
+            echo "✅ Found Image at: $image_path"
+            cp "$image_path" AnyKernel3/Image
+            cp "$image_path" kernel_platform/out/Final-Image-Find/Image
+          else
+            echo "Image not found via find, checking dist directory..."
+            if [ -f "kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/Image" ]; then
+              cp kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/Image AnyKernel3/Image
+              cp kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/Image kernel_platform/out/Final-Image-Find/Image
+            else
+              echo "❌ ERROR: Kernel Image not found in any build output location"
+              find kernel_platform/out/ -name "Image*" -type f 2>/dev/null || echo "No Image files found"
+              exit 1
+            fi
+          fi
+
+          cd AnyKernel3
+          zip -r9 "$GITHUB_WORKSPACE/AnyKernel3-lamu.zip" ./* -x '*.git*'
+
+      - name: "🧠 Set artifact name"
+        id: set_name
+        run: |
+          BASE_NAME="lamu_KernelSU_Next_${{ env.KSUVER }}"
+
+          if [ "${{ github.event.inputs.SUSFS }}" = "On" ]; then
+            FINAL_NAME="${BASE_NAME}_SUSFS"
+          else
+            FINAL_NAME="${BASE_NAME}"
+          fi
+
+          echo "ARTIFACT_NAME=${FINAL_NAME}" >> $GITHUB_OUTPUT
+
+      - name: "📦 Package build output"
+        if: success()
+        run: |
+          cd kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist
+          zip -r $GITHUB_WORKSPACE/kernel-lamu-build.zip .
+
+      - name: "📤 Upload AnyKernel3 artifact"
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.set_name.outputs.ARTIFACT_NAME }}
+          path: ./AnyKernel3/*
+
+      - name: "📤 Upload build artifacts"
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-output
+          path: kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/
+          retention-days: 14
+
+      - name: "📤 Upload AnyKernel3 zip to repository"
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp "$GITHUB_WORKSPACE/AnyKernel3-lamu.zip" "$GITHUB_WORKSPACE/${{ steps.set_name.outputs.ARTIFACT_NAME }}.zip"
+          git add -f "${{ steps.set_name.outputs.ARTIFACT_NAME }}.zip"
+          git commit -m "Add AnyKernel3 zip: ${{ steps.set_name.outputs.ARTIFACT_NAME }}" || echo "⚠️ Nothing to commit"
+          git push || echo "⚠️ Failed to push zip to repository (zip will still be available in release)"
+
+      - name: "🚀 Create GitHub Release"
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-lamu-ksu-${{ github.run_number }}
+          name: "Lamu KernelSU Next #${{ github.run_number }} (v${{ env.KSUVER }})"
+          body: |
+            ## 🔧 Kernel build for **Moto G05 (lamu)** with KernelSU Next
+
+            ### Build Configuration
+            - **KernelSU Next version**: ${{ env.KSUVER }}
+            - **SUSFS**: ${{ github.event.inputs.SUSFS }}
+            - **Baseband Guard (BBG)**: ${{ github.event.inputs.bbg }}
+            - **BBR Algorithm**: ${{ github.event.inputs.bbr }}
+            - **Proxy Optimization**: ${{ github.event.inputs.proxy }}
+            - **Unicode Bypass Fix**: ${{ github.event.inputs.UNICODE_BYPASS }}
+
+            ### Device Info
+            - **Device**: Moto G05 (lamu)
+            - **Defconfig**: mgk_64_k66_defconfig
+            - **Build variant**: user
+            - **Architecture**: arm64
+            - **Kernel version**: 6.6
+            - **Android version**: 15
+
+            ### Installation
+            Flash the AnyKernel3 zip via custom recovery (TWRP/OrangeFox) or KernelSU manager.
+          files: |
+            AnyKernel3-lamu.zip
+            kernel-lamu-build.zip
