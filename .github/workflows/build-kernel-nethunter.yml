@@ -187,11 +187,11 @@ jobs:
         if: ${{ github.event.inputs.bbg == 'On' }}
         run: |
           echo "::group::Adding BBG"
-          cd kernel_platform
+          # BBG setup.sh uses $(pwd) as GKI_ROOT, must run from kernel source root
+          cd kernel_platform/${GKI_KERNEL_SRC}
           if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash -s fix_blkdev_rename; then
             echo "::warning::BBG setup script failed, continuing anyway"
           fi
-          cd ${GKI_KERNEL_SRC}
           ./scripts/config --file arch/arm64/configs/gki_defconfig --enable CONFIG_BBG
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
           # cd ./KernelSU-Next
@@ -595,37 +595,41 @@ jobs:
           if [ "${{ github.event.inputs.nethunter }}" == "On" ]; then
             echo "🔪 Enabling Nethunter configs..."
 
-            # Bluetooth HCI drivers
+            # Bluetooth HCI USB drivers (BT=m in GKI, so these must be =m not =y)
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
-              --enable CONFIG_BT_HCIBTUSB \
+              --module CONFIG_BT_HCIBTUSB \
               --enable CONFIG_BT_HCIBTUSB_BCM \
               --enable CONFIG_BT_HCIBTUSB_RTL \
-              --enable CONFIG_BT_HCIVHCI \
-              --enable CONFIG_BT_HCIBCM203X \
-              --enable CONFIG_BT_HCIBPA10X \
-              --enable CONFIG_BT_HCIBFUSB
+              --module CONFIG_BT_HCIVHCI \
+              --module CONFIG_BT_HCIBCM203X \
+              --module CONFIG_BT_HCIBPA10X \
+              --module CONFIG_BT_HCIBFUSB
 
-            # SDR: Airspy & HackRF
+            # SDR: Airspy & HackRF (must be =m; depends on MEDIA_SDR_SUPPORT)
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
-              --enable CONFIG_USB_AIRSPY \
-              --enable CONFIG_USB_HACKRF
+              --enable CONFIG_MEDIA_SDR_SUPPORT \
+              --module CONFIG_USB_AIRSPY \
+              --module CONFIG_USB_HACKRF
 
             # CAN bus support
+            # CAN, CAN_DEV, CAN_VCAN are already =m in GKI gki_defconfig; must stay =m
+            # so BUILD.bazel can find can.ko, can-dev.ko, vcan.ko in module_outs.
+            # CAN_GS_USB/PEAK_USB/etc. also need =m (parent CAN=m forces module-only).
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
-              --enable CONFIG_CAN \
-              --enable CONFIG_CAN_DEV \
+              --module CONFIG_CAN \
+              --module CONFIG_CAN_DEV \
               --enable CONFIG_CAN_CALC_BITTIMING \
-              --enable CONFIG_CAN_VCAN \
-              --enable CONFIG_CAN_GS_USB \
-              --enable CONFIG_CAN_PEAK_USB \
-              --enable CONFIG_CAN_KVASER_USB \
-              --enable CONFIG_CAN_EMS_USB \
-              --enable CONFIG_CAN_ESD_USB \
-              --enable CONFIG_CAN_8DEV_USB \
-              --enable CONFIG_CAN_MCP251X \
-              --enable CONFIG_CAN_HI311X
+              --module CONFIG_CAN_VCAN \
+              --module CONFIG_CAN_GS_USB \
+              --module CONFIG_CAN_PEAK_USB \
+              --module CONFIG_CAN_KVASER_USB \
+              --module CONFIG_CAN_EMS_USB \
+              --module CONFIG_CAN_ESD_USB \
+              --module CONFIG_CAN_8DEV_USB \
+              --module CONFIG_CAN_MCP251X \
+              --module CONFIG_CAN_HI311X
 
-            # Networking for Nethunter
+            # Networking for Nethunter (already =y in GKI, just ensure enabled)
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
               --enable CONFIG_NETLINK_DIAG \
               --enable CONFIG_VSOCKETS \
@@ -633,15 +637,17 @@ jobs:
               --enable CONFIG_NET_EMATCH_CANID
 
             # USB Serial converters
+            # USB_SERIAL and USB_SERIAL_FTDI_SIO are already =m in GKI; must stay =m.
+            # CH341 and PL2303 also need =m (parent USB_SERIAL=m forces module-only).
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
-              --enable CONFIG_USB_SERIAL \
+              --module CONFIG_USB_SERIAL \
               --enable CONFIG_USB_SERIAL_CONSOLE \
               --enable CONFIG_USB_SERIAL_GENERIC \
-              --enable CONFIG_USB_SERIAL_CH341 \
-              --enable CONFIG_USB_SERIAL_FTDI_SIO \
-              --enable CONFIG_USB_SERIAL_PL2303
+              --module CONFIG_USB_SERIAL_CH341 \
+              --module CONFIG_USB_SERIAL_FTDI_SIO \
+              --module CONFIG_USB_SERIAL_PL2303
 
-            # TTL target support
+            # TTL/HL iptables target support (parent NETFILTER is =y, these can be =y)
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
               --enable CONFIG_IP_NF_TARGET_TTL \
               --enable CONFIG_IP6_NF_TARGET_HL \
@@ -661,6 +667,30 @@ jobs:
           fi
 
           echo "✅ Kernel options configured"
+
+      - name: "🔧 Patch Bazel module_outs for Nethunter"
+        if: ${{ github.event.inputs.nethunter == 'On' }}
+        run: |
+          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
+          KMOD_DIR="${KP_DIR}/kernel/kernel_device_modules-6.6"
+          PATCH_FILE="${GITHUB_WORKSPACE}/patches/nethunter-modules-bazel.patch"
+          BZL_FILE="${KMOD_DIR}/kernel/kleaf/mgk_modules.bzl"
+
+          echo "🔧 Patching mgk_modules.bzl to add Nethunter modules to module_outs..."
+
+          if [ ! -f "${PATCH_FILE}" ]; then
+            echo "::error::nethunter-modules-bazel.patch is missing — Nethunter module .ko files"
+            echo "::error::will not be listed in Bazel module_outs and the build WILL FAIL."
+            echo "::error::Ensure patches/nethunter-modules-bazel.patch exists in the repository."
+            exit 1
+          elif grep -q 'btusb.ko' "${BZL_FILE}" 2>/dev/null; then
+            echo "ℹ️ Nethunter modules already present in mgk_modules.bzl"
+          else
+            cd "${KMOD_DIR}"
+            # Apply the patch; --fuzz=3 tolerates minor line-offset differences
+            patch -p1 --forward --fuzz=3 < "${PATCH_FILE}"
+            echo "✅ Nethunter Bazel module_outs patch applied"
+          fi
 
       - name: "🔧 Pre-build unifdef"
         run: |

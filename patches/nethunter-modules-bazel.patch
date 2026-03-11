@@ -1,0 +1,29 @@
+--- a/kernel/kleaf/mgk_modules.bzl
++++ b/kernel/kleaf/mgk_modules.bzl
+@@ -38,6 +38,28 @@ mgk_module_userdebug_outs = mgk_module_ext_outs + [
+ ]
+ 
+ mgk_module_user_outs = mgk_module_ext_outs + [
++    # Nethunter: Bluetooth HCI USB drivers
++    "drivers/bluetooth/bcm203x.ko",
++    "drivers/bluetooth/bfusb.ko",
++    "drivers/bluetooth/bpa10x.ko",
++    "drivers/bluetooth/btusb.ko",
++    "drivers/bluetooth/hci_vhci.ko",
++    # Nethunter: CAN USB adapters
++    "drivers/net/can/usb/ems_usb.ko",
++    "drivers/net/can/usb/esd_usb.ko",
++    "drivers/net/can/usb/gs_usb.ko",
++    "drivers/net/can/usb/kvaser_usb/kvaser_usb.ko",
++    "drivers/net/can/usb/peak_usb/peak_usb.ko",
++    "drivers/net/can/usb/usb_8dev.ko",
++    # Nethunter: CAN SPI adapters
++    "drivers/net/can/spi/hi311x.ko",
++    "drivers/net/can/spi/mcp251x.ko",
++    # Nethunter: USB serial converters (extra)
++    "drivers/usb/serial/ch341.ko",
++    "drivers/usb/serial/pl2303.ko",
++    # Nethunter: SDR (Software Defined Radio)
++    "drivers/media/usb/airspy/airspy.ko",
++    "drivers/media/usb/hackrf/hackrf.ko",
+ ]
