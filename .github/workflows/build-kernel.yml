@@ -90,7 +90,7 @@ jobs:
             libncurses-dev python3 git curl wget rsync cpio zip unzip \
             ccache gawk dos2unix git curl ca-certificates build-essential clang lld flex bison \
             libelf-dev libssl-dev libncurses-dev zlib1g-dev liblz4-tool \
-            libxml2-utils rsync unzip dwarves file python3 ccache
+            libxml2-utils rsync unzip dwarves file python3 ccache unifdef
 
       
       - name: Install Repo Tool
@@ -397,12 +397,17 @@ jobs:
           # Add function declarations to include/linux/susfs.h
           if [ -f include/linux/susfs.h ]; then
             if ! grep -q 'susfs_uname_is_active' include/linux/susfs.h; then
-              sed -i '/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/{
-                N
-                /void susfs_set_uname/a\
-          bool susfs_uname_is_active(void);\
-          int susfs_set_uname_from_kernel(const char *release, const char *version);
-              }' include/linux/susfs.h
+              # Use awk for reliable multi-line insertion after the susfs_set_uname declaration
+              awk '
+              /void susfs_set_uname\(/ {
+                print
+                print "bool susfs_uname_is_active(void);"
+                print "int susfs_set_uname_from_kernel(const char *release, const char *version);"
+                next
+              }
+              { print }
+              ' include/linux/susfs.h > include/linux/susfs.h.tmp
+              mv include/linux/susfs.h.tmp include/linux/susfs.h
               echo "✅ Added declarations to susfs.h"
             else
               echo "ℹ️ Declarations already present in susfs.h"
@@ -412,31 +417,37 @@ jobs:
           # Add function definitions to fs/susfs.c
           if [ -f fs/susfs.c ]; then
             if ! grep -q 'susfs_uname_is_active' fs/susfs.c; then
-              # Insert the new functions right before the #endif of CONFIG_KSU_SUSFS_SPOOF_UNAME
-              sed -i '/^#endif \/\/ #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/i\
-          \
-          bool susfs_uname_is_active(void) {\
-          \treturn READ_ONCE(is_susfs_uname_set);\
-          }\
-          \
-          int susfs_set_uname_from_kernel(const char *release, const char *version) {\
-          \tif (!release || !version)\
-          \t\treturn -EINVAL;\
-          \twrite_seqlock(\&susfs_uname_seqlock);\
-          \tif (!strcmp(release, "default")) {\
-          \t\tstrscpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);\
-          \t} else {\
-          \t\tstrncpy(my_uname.release, release, __NEW_UTS_LEN);\
-          \t}\
-          \tif (!strcmp(version, "default")) {\
-          \t\tstrscpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);\
-          \t} else {\
-          \t\tstrncpy(my_uname.version, version, __NEW_UTS_LEN);\
-          \t}\
-          \tis_susfs_uname_set = true;\
-          \twrite_sequnlock(\&susfs_uname_seqlock);\
-          \treturn 0;\
-          }' fs/susfs.c
+              # Use awk to insert functions before the #endif of CONFIG_KSU_SUSFS_SPOOF_UNAME
+              awk '
+              /^#endif.*CONFIG_KSU_SUSFS_SPOOF_UNAME/ {
+                print ""
+                print "bool susfs_uname_is_active(void) {"
+                print "\treturn READ_ONCE(is_susfs_uname_set);"
+                print "}"
+                print ""
+                print "int susfs_set_uname_from_kernel(const char *release, const char *version) {"
+                print "\tif (!release || !version)"
+                print "\t\treturn -EINVAL;"
+                print "\twrite_seqlock(&susfs_uname_seqlock);"
+                print "\tif (!strcmp(release, \"default\")) {"
+                print "\t\tstrscpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);"
+                print "\t} else {"
+                print "\t\tstrncpy(my_uname.release, release, __NEW_UTS_LEN);"
+                print "\t}"
+                print "\tif (!strcmp(version, \"default\")) {"
+                print "\t\tstrscpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);"
+                print "\t} else {"
+                print "\t\tstrncpy(my_uname.version, version, __NEW_UTS_LEN);"
+                print "\t}"
+                print "\tis_susfs_uname_set = true;"
+                print "\twrite_sequnlock(&susfs_uname_seqlock);"
+                print "\treturn 0;"
+                print "}"
+                print ""
+              }
+              { print }
+              ' fs/susfs.c > fs/susfs.c.tmp
+              mv fs/susfs.c.tmp fs/susfs.c
               echo "✅ Added function definitions to susfs.c"
             else
               echo "ℹ️ Function definitions already present in susfs.c"
@@ -541,15 +552,46 @@ jobs:
           # O2 optimization for 6.6
           echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "${DEFCONFIG}"
 
-          # Skip unnecessary header install
-          echo "CONFIG_HEADERS_INSTALL=n" >> "${DEFCONFIG}"
-
           # Disable defconfig check
           if [ -f "${GKI_KERNEL_SRC}/build.config.gki" ]; then
             sed -i 's/check_defconfig//' "${GKI_KERNEL_SRC}/build.config.gki"
           fi
 
           echo "✅ Kernel options configured"
+
+      - name: "🔧 Pre-build unifdef for headers_install"
+        run: |
+          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
+          GKI_SRC="${KP_DIR}/${GKI_KERNEL_SRC}"
+
+          echo "🔧 Building unifdef for kernel headers installation..."
+
+          # The Bazel sandbox requires scripts/unifdef to be present as a
+          # pre-built binary in the kernel source tree. Build it from the
+          # kernel's own scripts/unifdef.c if available, otherwise fall back
+          # to copying the system-installed unifdef binary.
+          if [ -f "${GKI_SRC}/scripts/unifdef.c" ]; then
+            cc -o "${GKI_SRC}/scripts/unifdef" "${GKI_SRC}/scripts/unifdef.c"
+            echo "✅ Compiled unifdef from kernel source"
+          elif command -v unifdef >/dev/null 2>&1; then
+            cp "$(command -v unifdef)" "${GKI_SRC}/scripts/unifdef"
+            echo "✅ Copied system unifdef to kernel scripts/"
+          else
+            echo "❌ ERROR: unifdef not available"
+            exit 1
+          fi
+
+          chmod +x "${GKI_SRC}/scripts/unifdef"
+          ls -la "${GKI_SRC}/scripts/unifdef"
+
+          # Also place unifdef in the device modules tree if it has a scripts dir
+          DEVICE_MOD="${KP_DIR}/kernel/kernel_device_modules-6.6"
+          if [ -d "${DEVICE_MOD}/scripts" ]; then
+            cp "${GKI_SRC}/scripts/unifdef" "${DEVICE_MOD}/scripts/unifdef" 2>/dev/null || true
+            chmod +x "${DEVICE_MOD}/scripts/unifdef" 2>/dev/null || true
+          fi
+
+          echo "✅ unifdef ready for headers_install"
 
       - name: "🔨 Build kernel with Bazel"
         run: |
