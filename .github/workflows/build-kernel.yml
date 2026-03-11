@@ -48,6 +48,24 @@ on:
           - 'Off'
         default: 'Off'
 
+      optimize:
+        description: "Apply kernel performance optimizations (disable debug, tune scheduler/VM/storage)"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'On'
+
+      nethunter:
+        description: "Enable Nethunter compatibility (USB, Bluetooth, CAN, serial)"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'Off'
+
 jobs:
   build:
     name: Lamu KernelSU Next (SUSFS ${{ github.event.inputs.SUSFS }})
@@ -541,6 +559,7 @@ jobs:
           echo "✅ All patches applied"
 
       - name: "⚡ Apply kernel performance optimizations"
+        if: ${{ github.event.inputs.optimize == 'On' }}
         run: |
           KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
           KSRC="${KP_DIR}/${GKI_KERNEL_SRC}"
@@ -568,6 +587,52 @@ jobs:
           else
             echo "⚠️ Performance optimization patch not found"
           fi
+
+      - name: "⚡ Apply community kernel patches"
+        if: ${{ github.event.inputs.optimize == 'On' }}
+        run: |
+          set -euo pipefail
+          echo "::group::Applying community kernel patches..."
+          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
+          KSRC="${KP_DIR}/${GKI_KERNEL_SRC}"
+          cd "${KSRC}"
+
+          # Sources: TheWildJames/kernel_patches, EmberHeart-Kernels/kernel_patches
+          # All patches verified against kernel-mtk android-15-release-vvta35 (Linux 6.6.82)
+
+          echo "📦 Applying scheduler optimizations..."
+          # Disable CACHE_HOT_BUDDY for better DynamIQ DSU utilization (Sultan Alsawaf)
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/disable_cache_hot_buddy.patch" || true
+
+          echo "📦 Applying filesystem optimizations..."
+          # F2FS: reduce congestion timeout 20ms->6ms (Park Ju Hyung / kdrag0n)
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/f2fs_reduce_congestion.patch" || true
+          # F2FS: enlarge min_fsync_blocks 8->20 (OPPO/Huawei production)
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/f2fs_enlarge_min_fsync_blocks.patch" || true
+          # EXT4: increase JBD2 commit age 5->30s, let VM batch writes (Arjan van de Ven / Intel)
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/increase_ext4_default_commit_age.patch" || true
+          # Reduce VFS cache pressure 100->50 (Tyler Nijmeh)
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/reduce_cache_pressure.patch" || true
+
+          echo "📦 Applying power management optimizations..."
+          # Reduce freeze timeout 20s->1s for Android (Sultan Alsawaf)
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/reduce_freeze_timeout.patch" || true
+          # Minimize alarmtimer wakeup time for power savings (xNombre)
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/minimise_wakeup_time.patch" || true
+
+          echo "📦 Applying network optimizations..."
+          # Increase socket memory packets 256->1024 (Colin Ian King / Intel)
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/increase_sk_mem_packets.patch" || true
+
+          echo "📦 Applying misc optimizations..."
+          # Silence IRQ affinity logspam (Jebaitedneko)
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/silence_irq_cpu_logspam.patch" || true
+
+          # Clean up any reject files
+          find . -name "*.rej" -delete 2>/dev/null || true
+
+          echo "Community kernel patches applied ✅"
+          echo "::endgroup::"
 
       - name: "⚙️ Configure kernel options"
         run: |
@@ -683,9 +748,69 @@ jobs:
               --enable CONFIG_IP6_NF_TARGET_MASQUERADE
           fi
 
-          # O2 optimization for 6.6
+          # Nethunter compatibility configs
+          if [ "${{ github.event.inputs.nethunter }}" == "On" ]; then
+            echo "🔪 Enabling Nethunter configs..."
+
+            # Bluetooth HCI drivers
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_BT_HCIBTUSB \
+              --enable CONFIG_BT_HCIBTUSB_BCM \
+              --enable CONFIG_BT_HCIBTUSB_RTL \
+              --enable CONFIG_BT_HCIVHCI \
+              --enable CONFIG_BT_HCIBCM203X \
+              --enable CONFIG_BT_HCIBPA10X \
+              --enable CONFIG_BT_HCIBFUSB
+
+            # SDR: Airspy & HackRF
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_USB_AIRSPY \
+              --enable CONFIG_USB_HACKRF
+
+            # CAN bus support
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_CAN \
+              --enable CONFIG_CAN_DEV \
+              --enable CONFIG_CAN_CALC_BITTIMING \
+              --enable CONFIG_CAN_VCAN \
+              --enable CONFIG_CAN_GS_USB \
+              --enable CONFIG_CAN_PEAK_USB \
+              --enable CONFIG_CAN_KVASER_USB \
+              --enable CONFIG_CAN_EMS_USB \
+              --enable CONFIG_CAN_ESD_USB2 \
+              --enable CONFIG_CAN_8DEV_USB \
+              --enable CONFIG_CAN_MCP251X \
+              --enable CONFIG_CAN_HI311X
+
+            # Networking for Nethunter
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_NETLINK_DIAG \
+              --enable CONFIG_VSOCKETS \
+              --enable CONFIG_NET_SCHED \
+              --enable CONFIG_NET_EMATCH_CANID
+
+            # USB Serial converters
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_USB_SERIAL \
+              --enable CONFIG_USB_SERIAL_CONSOLE \
+              --enable CONFIG_USB_SERIAL_GENERIC \
+              --enable CONFIG_USB_SERIAL_CH341 \
+              --enable CONFIG_USB_SERIAL_FTDI_SIO \
+              --enable CONFIG_USB_SERIAL_PL2303
+
+            # TTL target support
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_IP_NF_TARGET_TTL \
+              --enable CONFIG_IP6_NF_TARGET_HL \
+              --enable CONFIG_IP6_NF_MATCH_HL
+
+            echo "Nethunter configs applied ✅"
+          fi
+
+          # Build optimization configs
           $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
-            --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+            --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE \
+            --enable CONFIG_LRU_GEN_ENABLED
 
           # Disable defconfig check
           if [ -f "${GKI_KERNEL_SRC}/build.config.gki" ]; then
@@ -861,6 +986,8 @@ jobs:
             - **BBR Algorithm**: ${{ github.event.inputs.bbr }}
             - **Proxy Optimization**: ${{ github.event.inputs.proxy }}
             - **Unicode Bypass Fix**: ${{ github.event.inputs.UNICODE_BYPASS }}
+            - **Performance Optimization**: ${{ github.event.inputs.optimize }}
+            - **Nethunter**: ${{ github.event.inputs.nethunter }}
 
             ### Device Info
             - **Device**: Moto G05 (lamu)
@@ -870,13 +997,22 @@ jobs:
             - **Kernel version**: 6.6
             - **Android version**: 15
 
-            ### ⚡ Performance Optimizations
+            ### ⚡ Performance Optimizations (when enabled)
             - **Debugging disabled**: KASAN, KFENCE, UBSAN, SCHEDSTATS, PAGE_OWNER/PINNER removed
             - **CPU scheduler**: Reduced latency (4ms), faster task migration (250µs), base slice 0.5ms
             - **VM/Memory**: Swappiness 40, dirty ratios 5%/15%, proactive compaction 30%, ZSWAP enabled
             - **eMMC/Storage**: Queue depth 128, DMA merge segments 1024, MMC crypto enabled
             - **I/O scheduler**: BFQ idle time halved (4ms), faster throughput
             - **Compiler**: -O2 optimization, HZ=300, TCP FastOpen
+            - **Community patches**: CACHE_HOT_BUDDY disabled, F2FS congestion/fsync tuned, EXT4 commit age, socket buffers, freeze timeout, alarmtimer wakeup, IRQ logspam silenced, VFS cache pressure reduced
+
+            ### 🔪 Nethunter Support (when enabled)
+            - Bluetooth HCI USB drivers (BCM, RTL, BPA10X, BFUSB)
+            - SDR support (Airspy, HackRF)
+            - CAN bus (USB: GS, Peak, Kvaser, EMS, ESD, 8DEV; SPI: MCP251X, HI311X)
+            - USB serial converters (CH341, FTDI, PL2303)
+            - TTL/HL target support for iptables
+            - Network scheduler and CANID matching
 
             ### Installation
             Flash the AnyKernel3 zip via custom recovery (TWRP/OrangeFox) or KernelSU manager.
