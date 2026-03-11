@@ -316,9 +316,32 @@ jobs:
         run: |
           cd kernel_platform/${GKI_KERNEL_SRC}
 
-          echo "🛠️ Setting up KernelSU Next..."
-          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -
+          echo "🛠️ Setting up KernelSU Next as git submodule..."
+
+          # Add KernelSU-Next as a git submodule (ensures proper git metadata)
+          git submodule add --force https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
           git submodule update --init --recursive
+
+          # Checkout the latest tag (like the original setup.sh does)
+          cd KernelSU-Next
+          LATEST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "")
+          if [ -n "$LATEST_TAG" ]; then
+            git checkout "$LATEST_TAG"
+            echo "Checked out tag: $LATEST_TAG"
+          fi
+          cd ..
+
+          # Create symlink from drivers/kernelsu to KernelSU-Next/kernel
+          DRIVER_DIR="drivers"
+          if [ ! -d "KernelSU-Next/kernel" ]; then
+            echo "❌ ERROR: KernelSU-Next/kernel directory not found after submodule init"
+            exit 1
+          fi
+          ln -sf "$(realpath --relative-to="$DRIVER_DIR" "KernelSU-Next/kernel")" "$DRIVER_DIR/kernelsu"
+
+          # Register KernelSU in kernel build system
+          grep -q "kernelsu" "$DRIVER_DIR/Makefile" || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> "$DRIVER_DIR/Makefile"
+          grep -q 'source "drivers/kernelsu/Kconfig"' "$DRIVER_DIR/Kconfig" || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' "$DRIVER_DIR/Kconfig"
 
           cd KernelSU-Next/kernel
           COMMITS_COUNT=$(/usr/bin/git rev-list --count HEAD)
@@ -338,13 +361,27 @@ jobs:
             echo "NEED_HOOKS=false" >> $GITHUB_ENV
           fi
 
+          # Get tag for version info
+          KSU_TAG=$(cd .. && git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")
+
+          # Inject pre-computed version info into Kbuild for Bazel sandbox compatibility
+          # (Bazel sandbox strips .git directories, making git commands fail during build)
+          {
+            echo "# Pre-computed version info (avoids git dependency in Bazel sandbox)"
+            echo "KSU_GIT_VERSION := ${COMMITS_COUNT}"
+            echo "KSU_GIT_TAG := ${KSU_TAG}"
+            echo "KSU_GIT_VERSION_VALID := 1"
+            echo ""
+            cat Kbuild
+          } > Kbuild.tmp && mv Kbuild.tmp Kbuild
+
           cd ..
           KSUN_COMMIT_SHA=$(git rev-parse HEAD)
           echo "KSUN_COMMIT_SHA=$KSUN_COMMIT_SHA" >> $GITHUB_ENV
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
 
           echo "KernelSU Next Version: $KSU_VERSION"
-          echo "KernelSU Next added (commit: ${KSUN_COMMIT_SHA:0:8}) ✅"
+          echo "KernelSU Next added as submodule (commit: ${KSUN_COMMIT_SHA:0:8}) ✅"
 
       - name: "🔧 Setup and apply patches"
         run: |
