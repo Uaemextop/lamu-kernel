@@ -128,16 +128,7 @@ jobs:
             -b ${{ github.ref_name }} -m manifest.xml --depth=1
           repo sync -c --no-tags --no-clone-bundle -j$(nproc)
 
-          # Create Bazel workspace symlinks (repo linkfiles cannot use '..' components)
-          ln -sf ../external kernel/external
-          ln -sf ../prebuilts kernel/prebuilts
-          ln -sf ../system kernel/system
-          ln -sf ../vendor kernel/vendor
-          mkdir -p kernel/build kernel/tools
-          ln -sf ../../build/bazel_common_rules kernel/build/bazel_common_rules
-          ln -sf ../../system/tools/mkbootimg kernel/tools/mkbootimg
-
-          echo "✅ Repo sync complete — workspace and symlinks ready"
+          echo "✅ Repo sync complete — workspace ready"
           ls -la kernel/
 
       - name: "🔍 Detect kernel source directory"
@@ -745,8 +736,8 @@ jobs:
           export DEFCONFIG_OVERLAYS="mt6768_overlay.config lamu_overlay.config"
           export KERNEL_VERSION=kernel-6.6
           export SOURCE_DATE_EPOCH=0
-          export JAVA_HOME=${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86
-          export PATH="${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86/bin:${PATH}"
+          export JAVA_HOME=${KERNEL_ROOT_DIR}/kernel/prebuilts/jdk/jdk11/linux-x86
+          export PATH="${KERNEL_ROOT_DIR}/kernel/prebuilts/jdk/jdk11/linux-x86/bin:${PATH}"
 
           PRIVATE_BAZEL_BUILD_FLAG="--//build/bazel_mgk_rules:kernel_version=${LINUX_KERNEL_VERSION#kernel-} --experimental_writable_outputs --noenable_bzlmod --config=stamp --repo_manifest=${KERNEL_ROOT_DIR}/${KERNEL_DIR}/fake_manifest.xml --sandbox_debug --verbose_failures"
 
@@ -760,6 +751,8 @@ jobs:
 
           # Setup WORKSPACE file required by Bazel (MGK-specific, defines @mgk_info and vendor repos)
           cp build/bazel_mgk_rules/kleaf/bazel.WORKSPACE WORKSPACE
+          # Fix vendor paths: manifest places vendor/ directly under kernel/, so drop the "../" prefix
+          sed -i 's|path="../vendor/|path="vendor/|g' WORKSPACE
 
           # Use git-cloned build/kernel/kleaf/bazel.py directly (no symlinks)
           # The build repo was already cloned via git clone in an earlier step

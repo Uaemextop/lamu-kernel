@@ -4,21 +4,14 @@
 
   Replaces the manual git clone steps in the CI workflow.
   All paths are relative to the repo root (kernel_platform/).
+  Projects are checked out directly under kernel/ so that no
+  symlinks are needed for the Bazel workspace.
 
   Usage:
     mkdir kernel_platform
     cd kernel_platform
     repo init -u URL_OF_THIS_REPO -m manifest.xml
     repo sync -c
-
-  After sync, create Bazel workspace symlinks manually:
-    ln -sf ../external kernel/external
-    ln -sf ../prebuilts kernel/prebuilts
-    ln -sf ../system kernel/system
-    ln -sf ../vendor kernel/vendor
-    mkdir -p kernel/build kernel/tools
-    ln -sf ../../build/bazel_common_rules kernel/build/bazel_common_rules
-    ln -sf ../../system/tools/mkbootimg kernel/tools/mkbootimg
 -->
 <manifest>
 
@@ -39,76 +32,76 @@
   <!-- ============================================================ -->
   <!-- AOSP external dependencies                                    -->
   <!-- ============================================================ -->
-  <project path="external/libcap"
+  <project path="kernel/external/libcap"
            name="platform/external/libcap" />
 
 
-  <project path="external/libcap-ng"
+  <project path="kernel/external/libcap-ng"
            name="platform/external/libcap-ng" />
 
-  <project path="external/bazel-skylib"
+  <project path="kernel/external/bazel-skylib"
            name="platform/external/bazel-skylib" />
 
-  <project path="external/bazelbuild-rules_cc"
+  <project path="kernel/external/bazelbuild-rules_cc"
            name="platform/external/bazelbuild-rules_cc" />
 
-  <project path="external/bazelbuild-rules_license"
+  <project path="kernel/external/bazelbuild-rules_license"
            name="platform/external/bazelbuild-rules_license" />
 
-  <project path="external/bazelbuild-rules_pkg"
+  <project path="kernel/external/bazelbuild-rules_pkg"
            name="platform/external/bazelbuild-rules_pkg"
            revision="main-kernel" />
 
-  <project path="external/bazelbuild-rules_python"
+  <project path="kernel/external/bazelbuild-rules_python"
            name="platform/external/bazelbuild-rules_python" />
 
-  <project path="external/bazelbuild-rules_rust"
+  <project path="kernel/external/bazelbuild-rules_rust"
            name="platform/external/bazelbuild-rules_rust" />
 
-  <project path="external/stardoc"
+  <project path="kernel/external/stardoc"
            name="platform/external/stardoc" />
 
-  <project path="external/zopfli"
+  <project path="kernel/external/zopfli"
            name="platform/external/zopfli" />
 
-  <project path="external/pigz"
+  <project path="kernel/external/pigz"
            name="platform/external/pigz"
            revision="main-kernel" />
 
-  <project path="external/python/absl-py"
+  <project path="kernel/external/python/absl-py"
            name="platform/external/python/absl-py" />
 
   <!-- ============================================================ -->
   <!-- AOSP prebuilts                                                -->
   <!-- ============================================================ -->
-  <project path="prebuilts/bazel/linux-x86_64"
+  <project path="kernel/prebuilts/bazel/linux-x86_64"
            name="platform/prebuilts/bazel/linux-x86_64" />
 
-  <project path="prebuilts/clang/host/linux-x86"
+  <project path="kernel/prebuilts/clang/host/linux-x86"
            name="platform/prebuilts/clang/host/linux-x86" />
 
-  <project path="prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8"
+  <project path="kernel/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8"
            name="platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8" />
 
-  <project path="prebuilts/build-tools"
+  <project path="kernel/prebuilts/build-tools"
            name="platform/prebuilts/build-tools" />
 
-  <project path="prebuilts/jdk/jdk11"
+  <project path="kernel/prebuilts/jdk/jdk11"
            name="platform/prebuilts/jdk/jdk11"
            revision="build-tools-release" />
 
-  <project path="prebuilts/rust"
+  <project path="kernel/prebuilts/rust"
            name="platform/prebuilts/rust" />
 
-  <project path="prebuilts/clang-tools"
+  <project path="kernel/prebuilts/clang-tools"
            name="platform/prebuilts/clang-tools" />
 
   <!-- NDK prebuilts (toolchain server, non-default branches) -->
-  <project path="prebuilts/ndk-r26"
+  <project path="kernel/prebuilts/ndk-r26"
            name="toolchain/prebuilts/ndk/r26"
            revision="main-kernel-2025" />
 
-  <project path="prebuilts/ndk-r23"
+  <project path="kernel/prebuilts/ndk-r23"
            name="toolchain/prebuilts/ndk/r23"
            revision="main-kernel-build-2023" />
 
@@ -116,10 +109,10 @@
   <!-- AOSP build rules & system tools                               -->
   <!-- ============================================================ -->
 
-  <project path="build/bazel_common_rules"
+  <project path="kernel/build/bazel_common_rules"
            name="platform/build/bazel_common_rules" />
 
-  <project path="system/tools/mkbootimg"
+  <project path="kernel/tools/mkbootimg"
            name="platform/system/tools/mkbootimg" />
 
 
@@ -145,7 +138,7 @@
            revision="android-15-release-vvta35" />
 
   <!-- Kernel build tools prebuilt -->
-  <project path="prebuilts/kernel-build-tools"
+  <project path="kernel/prebuilts/kernel-build-tools"
            name="kernel-prebuilts-kernel-build-tools"
            remote="moto"
            revision="android-15-release-vvta35" />
@@ -159,83 +152,83 @@
   <!-- ============================================================ -->
   <!-- Motorola / MediaTek vendor kernel modules                     -->
   <!-- ============================================================ -->
-  <project path="vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m"
            name="vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/bt/mt66xx"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/bt/mt66xx"
            name="vendor-mediatek-kernel_modules-connectivity-bt-mt66xx"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/bt/mt76xx-sdio"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/bt/mt76xx-sdio"
            name="vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/common"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/common"
            name="vendor-mediatek-kernel_modules-connectivity-common"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/connfem"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/connfem"
            name="vendor-mediatek-kernel_modules-connectivity-connfem"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/conninfra"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/conninfra"
            name="vendor-mediatek-kernel_modules-connectivity-conninfra"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/fmradio"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/fmradio"
            name="vendor-mediatek-kernel_modules-connectivity-fmradio"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/gps"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/gps"
            name="vendor-mediatek-kernel_modules-connectivity-gps"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/wlan/adaptor"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/wlan/adaptor"
            name="vendor-mediatek-kernel_modules-connectivity-wlan-adaptor"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/gpu"
+  <project path="kernel/vendor/mediatek/kernel_modules/gpu"
            name="vendor-mediatek-kernel_modules-gpu"
            remote="moto"
            revision="android-15-release-vvta35" />
 
 
-  <project path="vendor/mediatek/kernel_modules/met_drv_v3"
+  <project path="kernel/vendor/mediatek/kernel_modules/met_drv_v3"
            name="vendor-mediatek-kernel_modules-met_drv_v3"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/met_drv_v2"
+  <project path="kernel/vendor/mediatek/kernel_modules/met_drv_v2"
            name="vendor-mediatek-kernel_modules-met_drv_v2"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/udc"
+  <project path="kernel/vendor/mediatek/kernel_modules/udc"
            name="vendor-mediatek-kernel_modules-udc"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/connectivity/bt/linux_v2"
+  <project path="kernel/vendor/mediatek/kernel_modules/connectivity/bt/linux_v2"
            name="vendor-mediatek-kernel_modules-connectivity-bt-linux_v2"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/mtkcam"
+  <project path="kernel/vendor/mediatek/kernel_modules/mtkcam"
            name="vendor-mediatek-kernel_modules-mtkcam"
            remote="moto"
            revision="android-15-release-vvta35" />
 
-  <project path="vendor/mediatek/kernel_modules/afs_common_utils"
+  <project path="kernel/vendor/mediatek/kernel_modules/afs_common_utils"
            name="vendor-mediatek-kernel_modules-afs_common_utils"
            remote="moto"
            revision="android-15-release-vvta35" />
