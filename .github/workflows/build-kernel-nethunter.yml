@@ -73,6 +73,9 @@ jobs:
 
     permissions:
       contents: write
+      actions: write
+      id-token: write
+      attestations: write
 
     env:
       TARGET_PRODUCT: lamu
@@ -96,9 +99,9 @@ jobs:
 
       - name: "🔐 Configure Git"
         run: |
-          git config --global user.name "build"
-          git config --global user.email "build@lamu-kernel"
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git config --global user.name "EduardoC3677"
+          git config --global user.email "ealvarado2677@gmail.com "
+          git config --global url."https://x-access-token:${{ secrets.LAM }}@github.com/".insteadOf "https://github.com/"
 
       - name: "📦 Install dependencies"
         run: |
