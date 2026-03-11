@@ -149,7 +149,9 @@ jobs:
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/build-tools -b android15-release
 
-          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release
+          mkdir -vp $my_top_dir/prebuilts/jdk
+
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release $my_top_dir/prebuilts/jdk/jdk11
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/rust -b android15-release
 
@@ -507,6 +509,10 @@ jobs:
           PRIVATE_BAZEL_DIST_GOAL="//${KERNEL_DIR#kernel/}:${my_kernel_target}_customer_dist.${KERNEL_BUILD_VARIANT}"
 
           cd ${KERNEL_ROOT_DIR}/kernel
+
+          # Create tools/bazel symlink required by Kleaf build system
+          mkdir -p tools
+          ln -sf build/kernel/kleaf/bazel.py tools/bazel
 
           tools/bazel \
             --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
