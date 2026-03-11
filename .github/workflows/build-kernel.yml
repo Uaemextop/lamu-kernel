@@ -73,6 +73,8 @@ jobs:
     steps:
       - name: "🚀 Checkout repository"
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: "🔐 Configure Git"
         run: |
@@ -341,11 +343,11 @@ jobs:
 
           echo "⬇️ Downloading patches..."
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            git clone https://github.com/cctv18/susfs4oki.git \
+            git clone --depth 1 https://github.com/cctv18/susfs4oki.git \
               -b "oki-${ANDROID_VERSION}-${KERNEL_VERSION}"
           fi
-          git clone https://github.com/Xiaomichael/kernel_patches.git
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          git clone --depth 1 https://github.com/Xiaomichael/kernel_patches.git
+          git clone --depth 1 https://github.com/ShirkNeko/SukiSU_patch.git
 
           KSRC="${KP_DIR}/${GKI_KERNEL_SRC}"
 
