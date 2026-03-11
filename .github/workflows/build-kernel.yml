@@ -386,7 +386,7 @@ jobs:
             echo "SuSFS Version: $SUSFS_VERSION"
             cd ..
 
-            # Function to compare semantic versions
+            # Compare semantic versions: returns true if $1 <= $2
             version_lte() {
               [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$1" ]
             }
@@ -450,13 +450,13 @@ jobs:
             cd "${KSRC}"
 
             # Fake kernel patch to fix task_mmu.c failures (android15-6.6)
-            fake_patched=0
+            compat_workaround=0
             if [ "${ANDROID_VERSION}" = "android15" ] && [ "${KERNEL_VERSION}" = "6.6" ]; then
               if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
-                echo "nr_subpages Line not found. Fake Patching!"
+                echo "Applying android15-6.6 compatibility workaround for task_mmu.c..."
                 sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' \
                        -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
-                fake_patched=1
+                compat_workaround=1
               fi
             fi
 
@@ -465,10 +465,10 @@ jobs:
             patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch"
 
             # Revert Fake kernel patch
-            if [ "$fake_patched" = 1 ]; then
+            if [ "$compat_workaround" = 1 ]; then
               if [ "${ANDROID_VERSION}" = "android15" ] && [ "${KERNEL_VERSION}" = "6.6" ]; then
                 if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
-                  echo "nr_subpages Line found. Revert Fake Patching!"
+                  echo "Reverting android15-6.6 compatibility workaround..."
                   sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' \
                          -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
                 fi
