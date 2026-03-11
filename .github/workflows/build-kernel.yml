@@ -168,11 +168,19 @@ jobs:
       - name: "⚡ Setup Baseband-guard"
         if: ${{ github.event.inputs.bbg == 'On' }}
         run: |
-          cd kernel_platform/${GKI_KERNEL_SRC}
-          echo "🛠️ Setting up Baseband-guard..."
-          curl -sSL https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh -o setup_bbg.sh
-          bash setup_bbg.sh
-          echo "✅ Baseband-guard configured"
+          echo "::group::Adding BBG"
+          cd kernel_platform
+          if ! wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash -s fix_blkdev_rename; then
+            echo "::warning::BBG setup script failed, continuing anyway"
+          fi
+          cd ${GKI_KERNEL_SRC}
+          ./scripts/config --file arch/arm64/configs/gki_defconfig --enable CONFIG_BBG
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
+          # cd ./KernelSU-Next
+          # echo "Patching BBG Enhanced Security!"
+          # patch -p1 --forward < "../../../kernel_patches/common/bbg_untrusted_cred.patch"
+          echo "BBG LSM added ✅"
+          echo "::endgroup::"
 
       - name: "⚡ Setup KernelSU Next"
         run: |
@@ -460,21 +468,6 @@ jobs:
               --enable CONFIG_TMPFS_POSIX_ACL
           fi
 
-          # Baseband Guard
-          if [ "${{ github.event.inputs.bbg }}" == "On" ]; then
-            echo "⚡ Enabling BBG..."
-            $SCRIPTS_CONFIG --file "${DEFCONFIG}" --enable CONFIG_BBG
-            # BBG requires 'baseband_guard' in CONFIG_LSM (checked at build-time by its Makefile)
-            CURRENT_LSM=$(sed -n 's/^CONFIG_LSM="\(.*\)"/\1/p' "${DEFCONFIG}")
-            if [ -n "$CURRENT_LSM" ]; then
-              if ! echo "$CURRENT_LSM" | grep -q "baseband_guard"; then
-                $SCRIPTS_CONFIG --file "${DEFCONFIG}" --set-str CONFIG_LSM "${CURRENT_LSM},baseband_guard"
-              fi
-            else
-              $SCRIPTS_CONFIG --file "${DEFCONFIG}" --set-str CONFIG_LSM "landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"
-            fi
-          fi
-
           # BBR network algorithm
           if [ "${{ github.event.inputs.bbr }}" == "On" ]; then
             echo "🌐 Enabling BBR..."
@@ -667,16 +660,6 @@ jobs:
           name: kernel-build-output
           path: kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/
           retention-days: 14
-
-      - name: "📤 Upload AnyKernel3 zip to repository"
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp "$GITHUB_WORKSPACE/AnyKernel3-lamu.zip" "$GITHUB_WORKSPACE/${{ steps.set_name.outputs.ARTIFACT_NAME }}.zip"
-          git add -f "${{ steps.set_name.outputs.ARTIFACT_NAME }}.zip"
-          git commit -m "Add AnyKernel3 zip: ${{ steps.set_name.outputs.ARTIFACT_NAME }}" || echo "⚠️ Nothing to commit"
-          git push || echo "⚠️ Failed to push zip to repository (zip will still be available in release)"
 
       - name: "🚀 Create GitHub Release"
         if: success()
