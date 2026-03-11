@@ -84,8 +84,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc bison build-essential flex libelf-dev libssl-dev \
-            libncurses-dev python3 git curl wget rsync cpio zip unzip \
-            ccache gawk dos2unix
+            libncurses-dev python3 python3-pip python-is-python3 \
+            git curl wget rsync cpio zip unzip \
+            ccache gawk dos2unix lz4 lld \
+            dwarves device-tree-compiler pkg-config \
+            zlib1g-dev libxml2-utils
 
       - name: "⬇️ Clone external dependencies"
         run: |
@@ -482,6 +485,35 @@ jobs:
           fi
 
           echo "✅ Kernel options configured"
+
+      - name: "🔗 Create Bazel workspace symlinks"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          # The Bazel WORKSPACE lives inside kernel_platform/kernel/, so all
+          # Bazel labels (//prebuilts/..., //external/..., etc.) resolve from
+          # that directory.  The repositories were cloned one level up under
+          # kernel_platform/.  Create symlinks so Bazel can find them.
+
+          cd $my_top_dir/kernel
+
+          # Top-level directories that Bazel workspace.bzl references
+          for dir in prebuilts external system vendor; do
+            if [ -d "../$dir" ] && [ ! -e "$dir" ]; then
+              ln -sv "../$dir" "$dir"
+              echo "✅ Symlinked $dir -> ../$dir"
+            fi
+          done
+
+          # build/bazel_common_rules lives under kernel_platform/build/ but
+          # kernel_platform/kernel/build/ already exists (cloned earlier).
+          # Only symlink the missing sub-directory.
+          if [ -d "../build/bazel_common_rules" ] && [ ! -e "build/bazel_common_rules" ]; then
+            ln -sv "../../build/bazel_common_rules" "build/bazel_common_rules"
+            echo "✅ Symlinked build/bazel_common_rules"
+          fi
+
+          echo "✅ All Bazel workspace symlinks created"
 
       - name: "🔨 Build kernel with Bazel"
         run: |
