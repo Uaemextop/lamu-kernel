@@ -1,0 +1,21 @@
+diff --git a/scripts/headers_install.sh b/scripts/headers_install.sh
+index 56d3c338d..4d0f942d3 100755
+--- a/scripts/headers_install.sh
++++ b/scripts/headers_install.sh
+@@ -38,7 +38,15 @@ sed -E -e '
+ 	s@#(ifndef|define|endif[[:space:]]*/[*])[[:space:]]*_UAPI@#\1 @
+ ' $INFILE > $TMPFILE || exit 1
+ 
+-scripts/unifdef -U__KERNEL__ -D__EXPORTED_HEADERS__ $TMPFILE > $OUTFILE
++UNIFDEF_BIN=scripts/unifdef
++if [ ! -x "$UNIFDEF_BIN" ]; then
++	UNIFDEF_BIN=$(command -v unifdef 2>/dev/null || true)
++fi
++if [ -z "$UNIFDEF_BIN" ] || [ ! -x "$UNIFDEF_BIN" ]; then
++	echo "error: unifdef not found (tried scripts/unifdef and system PATH)" >&2
++	exit 1
++fi
++$UNIFDEF_BIN -U__KERNEL__ -D__EXPORTED_HEADERS__ $TMPFILE > $OUTFILE
+ [ $? -gt 1 ] && exit 1
+ 
+ # Remove /* ... */ style comments, and find CONFIG_ references in code
