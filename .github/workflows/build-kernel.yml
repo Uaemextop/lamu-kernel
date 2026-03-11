@@ -597,39 +597,27 @@ jobs:
           KSRC="${KP_DIR}/${GKI_KERNEL_SRC}"
           cd "${KSRC}"
 
-          # Sources: TheWildJames/kernel_patches, EmberHeart-Kernels/kernel_patches
-          # All patches verified against kernel-mtk android-15-release-vvta35 (Linux 6.6.82)
+          # Sources: TheWildJames/kernel_patches (common/)
+          # All patches dry-run verified against kernel-mtk android-15-release-vvta35 (Linux 6.6.82)
 
           echo "📦 Applying scheduler optimizations..."
-          # Disable CACHE_HOT_BUDDY for better DynamIQ DSU utilization (Sultan Alsawaf)
-          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/disable_cache_hot_buddy.patch" || true
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/disable_cache_hot_buddy.patch"
 
           echo "📦 Applying filesystem optimizations..."
-          # F2FS: reduce congestion timeout 20ms->6ms (Park Ju Hyung / kdrag0n)
-          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/f2fs_reduce_congestion.patch" || true
-          # F2FS: enlarge min_fsync_blocks 8->20 (OPPO/Huawei production)
-          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/f2fs_enlarge_min_fsync_blocks.patch" || true
-          # EXT4: increase JBD2 commit age 5->30s, let VM batch writes (Arjan van de Ven / Intel)
-          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/increase_ext4_default_commit_age.patch" || true
-          # Reduce VFS cache pressure 100->50 (Tyler Nijmeh)
-          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/reduce_cache_pressure.patch" || true
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/f2fs_reduce_congestion.patch"
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/f2fs_enlarge_min_fsync_blocks.patch"
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/increase_ext4_default_commit_age.patch"
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/reduce_cache_pressure.patch"
 
           echo "📦 Applying power management optimizations..."
-          # Reduce freeze timeout 20s->1s for Android (Sultan Alsawaf)
-          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/reduce_freeze_timeout.patch" || true
-          # Minimize alarmtimer wakeup time for power savings (xNombre)
-          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/minimise_wakeup_time.patch" || true
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/reduce_freeze_timeout.patch"
+          patch -p1 --forward < "${KP_DIR}/kernel_patches/common/minimise_wakeup_time.patch"
 
           echo "📦 Applying network optimizations..."
-          # Increase socket memory packets 256->1024 (Colin Ian King / Intel)
-          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/increase_sk_mem_packets.patch" || true
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/increase_sk_mem_packets.patch"
 
           echo "📦 Applying misc optimizations..."
-          # Silence IRQ affinity logspam (Jebaitedneko)
-          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/silence_irq_cpu_logspam.patch" || true
-
-          # Clean up any reject files
-          find . -name "*.rej" -delete 2>/dev/null || true
+          patch -p1 -F3 --forward < "${KP_DIR}/kernel_patches/common/silence_irq_cpu_logspam.patch"
 
           echo "Community kernel patches applied ✅"
           echo "::endgroup::"
@@ -777,7 +765,7 @@ jobs:
               --enable CONFIG_CAN_PEAK_USB \
               --enable CONFIG_CAN_KVASER_USB \
               --enable CONFIG_CAN_EMS_USB \
-              --enable CONFIG_CAN_ESD_USB2 \
+              --enable CONFIG_CAN_ESD_USB \
               --enable CONFIG_CAN_8DEV_USB \
               --enable CONFIG_CAN_MCP251X \
               --enable CONFIG_CAN_HI311X
