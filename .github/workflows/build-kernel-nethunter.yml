@@ -124,8 +124,8 @@ jobs:
       - name: "⬇️ Sync kernel source tree (repo)"
         run: |
           mkdir kernel_platform && cd kernel_platform
-          repo init -u ${{ github.server_url }}/${{ github.repository }} \
-            -b ${{ github.ref_name }} -m manifest.xml --depth=1
+          cp ../manifest.xml .
+          repo init -u https://github.com/Uaemextop/lamu-kernel.git -b main -m manifest.xml --depth=1
           repo sync -c --no-tags --no-clone-bundle -j$(nproc)
           echo "✅ Repo sync complete — workspace and symlinks ready"
           ls -la kernel/
