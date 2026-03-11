@@ -180,7 +180,7 @@ jobs:
           cd $my_top_dir/prebuilts/ndk/
 
           git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025
-          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-2025
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-build-2023
 
       - name: "⬇️ Clone kernel source code"
         run: |
