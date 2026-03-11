@@ -508,6 +508,10 @@ jobs:
 
           cd ${KERNEL_ROOT_DIR}/kernel
 
+          # Create tools/bazel symlink required by Kleaf build system
+          mkdir -p tools
+          ln -sf build/kernel/kleaf/bazel.py tools/bazel
+
           tools/bazel \
             --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
             --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
