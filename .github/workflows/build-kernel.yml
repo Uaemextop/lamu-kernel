@@ -90,7 +90,7 @@ jobs:
             libncurses-dev python3 git curl wget rsync cpio zip unzip \
             ccache gawk dos2unix git curl ca-certificates build-essential clang lld flex bison \
             libelf-dev libssl-dev libncurses-dev zlib1g-dev liblz4-tool \
-            libxml2-utils rsync unzip dwarves file python3 ccache
+            libxml2-utils rsync unzip dwarves file python3 ccache unifdef
 
       
       - name: Install Repo Tool
@@ -275,8 +275,11 @@ jobs:
         run: |
           cd kernel_platform/${GKI_KERNEL_SRC}
 
-          # Remove protected exports
+          # Remove protected exports from kernel source (prevents ABI check failures)
           rm -f android/abi_gki_protected_exports_* || true
+          rm -f android/abi_gki_protected_exports || true
+          find . -name "abi_gki_protected_exports*" -delete 2>/dev/null || true
+          echo "✅ Removed abi_gki_protected_exports"
 
           # Remove -dirty from version strings
           if [ -f scripts/setlocalversion ]; then
@@ -310,21 +313,34 @@ jobs:
           cd kernel_platform/${GKI_KERNEL_SRC}
 
           echo "🛠️ Setting up KernelSU Next..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -
+          git submodule update --init --recursive
 
-          cd KernelSU-Next
-          COMMIT_COUNT=$(curl -sI "https://api.github.com/repos/KernelSU-Next/KernelSU-Next/commits?sha=dev&per_page=1" \
-            | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p')
-          if [ -z "$COMMIT_COUNT" ] || ! [ "$COMMIT_COUNT" -eq "$COMMIT_COUNT" ] 2>/dev/null; then
-            echo "⚠️ Could not fetch commit count from GitHub API, using fallback version"
-            KSU_VERSION=31000
+          cd KernelSU-Next/kernel
+          COMMITS_COUNT=$(/usr/bin/git rev-list --count HEAD)
+
+          if [ "$COMMITS_COUNT" -lt 2684 ]; then
+            BASE_VERSION=10200
           else
-            KSU_VERSION=$(expr "$COMMIT_COUNT" "+" 30000)
+            BASE_VERSION=30000
           fi
-          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-          sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
 
-          echo "✅ KernelSU Next configured (version: $KSU_VERSION)"
+          KSU_VERSION=$(expr "$COMMITS_COUNT" "+" "$BASE_VERSION")
+          sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" Makefile
+
+          if [ "$KSU_VERSION" -lt 12884 ]; then
+            echo "NEED_HOOKS=true" >> $GITHUB_ENV
+          else
+            echo "NEED_HOOKS=false" >> $GITHUB_ENV
+          fi
+
+          cd ..
+          KSUN_COMMIT_SHA=$(git rev-parse HEAD)
+          echo "KSUN_COMMIT_SHA=$KSUN_COMMIT_SHA" >> $GITHUB_ENV
+          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+
+          echo "KernelSU Next Version: $KSU_VERSION"
+          echo "KernelSU Next added (commit: ${KSUN_COMMIT_SHA:0:8}) ✅"
 
       - name: "🔧 Setup and apply patches"
         run: |
@@ -336,19 +352,10 @@ jobs:
             git clone --depth 1 --single-branch --no-tags https://github.com/cctv18/susfs4oki.git \
               -b "oki-${ANDROID_VERSION}-${KERNEL_VERSION}"
           fi
-          git clone --depth 1 --single-branch --no-tags https://github.com/Xiaomichael/kernel_patches.git
+          git clone --depth 1 https://github.com/TheWildJames/kernel_patches.git
           git clone --depth 1 --single-branch --no-tags https://github.com/ShirkNeko/SukiSU_patch.git
 
           KSRC="${KP_DIR}/${GKI_KERNEL_SRC}"
-
-          echo "📝 Copying patch files..."
-          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            cp "${KP_DIR}/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" "${KSRC}/"
-            cp "${KP_DIR}/susfs4oki/kernel_patches/fs/"* "${KSRC}/fs/" || true
-            cp "${KP_DIR}/susfs4oki/kernel_patches/include/linux/"* "${KSRC}/include/linux/" || true
-          else
-            cp "${KP_DIR}/kernel_patches/next/scope_min_manual_hooks_v1.6.patch" "${KSRC}/"
-          fi
 
           if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "On" ]; then
             cp "${KP_DIR}/kernel_patches/common/unicode_bypass_fix_6.1+.patch" "${KSRC}/unicode_bypass_fix.patch"
@@ -360,90 +367,137 @@ jobs:
           if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "On" ]; then
             echo "📦 Applying Unicode zero-width bypass fix..."
             if ! patch -p1 < unicode_bypass_fix.patch; then
-              echo "⚠️ Unicode bypass patch had failures (some hunks may not apply on this kernel version)"
+              echo "⚠️ Unicode bypass patch had failures"
             fi
           fi
 
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            echo "📦 Applying SUSFS patch..."
-            if ! patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch"; then
-              echo "⚠️ SUSFS patch had failures (some hunks may not apply on this kernel version)"
+            echo "📦 Applying SUSFS patches..."
+
+            # Copy SUSFS files to kernel source
+            cp "${KP_DIR}/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" ./
+            cp "${KP_DIR}/susfs4oki/kernel_patches/fs/"* ./fs/ || true
+            cp "${KP_DIR}/susfs4oki/kernel_patches/include/linux/"* ./include/linux/ || true
+
+            # Get SUSFS version
+            cd KernelSU-Next
+            SUSFS_VERSION=$(grep '#define SUSFS_VERSION' ../include/linux/susfs.h | awk -F'"' '{print $2}')
+            echo "SUSVER=$SUSFS_VERSION" >> $GITHUB_ENV
+            echo "SuSFS Version: $SUSFS_VERSION"
+            cd ..
+
+            # Compare semantic versions: returns true if $1 <= $2
+            version_lte() {
+              [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$1" ]
+            }
+
+            if version_lte "${SUSFS_VERSION:1}" "1.5.12"; then
+              echo "NEED_HOOKS=true" >> $GITHUB_ENV
+            else
+              echo "NEED_HOOKS=false" >> $GITHUB_ENV
             fi
+
+            # Apply SUSFS KernelSU integration patch with version-specific fix
+            case "$SUSFS_VERSION" in
+              "v1.5.8")
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch || true
+                for p in fix_apk_sign.c.patch fix_core_hook.c.patch fix_selinux.c.patch fix_ksud.c.patch; do
+                  cp "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/$p" ./
+                  patch -p1 --forward --fuzz=3 < "$p"
+                done
+                ;;
+              "v1.5.9"|"v1.5.10"|"v1.5.11"|"v1.5.12")
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -printf "%f\n" | cut -d'.' -f1); do
+                  echo "Patching file: $file.c with fix_$file.c.patch"
+                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.c.patch"
+                done
+                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_kernel_compat.c.patch"
+                ;;
+              "v2.0.0")
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+
+                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+                  echo "Patching file: $file with fix_$file.patch"
+                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
+                done
+                echo "Patching Hook Mode!"
+                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/overwrite_hook_mode.patch"
+                echo "Patching KSU_TOOLKIT Support for SuSFS kernel!"
+                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/ksu_toolkit.patch"
+                ;;
+              *)
+                echo "⚠️ Unsupported SUSFS version: $SUSFS_VERSION, trying generic approach"
+                cd ./KernelSU-Next
+                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+                  FIX="${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
+                  [ -f "$FIX" ] && patch -p1 --forward < "$FIX" || true
+                done
+                ;;
+            esac
+            patch -p1 --forward < ksun_susfs_latest.patch || true
+
+            # Clean up reject files
+            find ./kernel -name "*.rej" -delete 2>/dev/null || true
+            cd "${KSRC}"
+
+            # Fake kernel patch to fix task_mmu.c failures (android15-6.6)
+            compat_workaround=0
+            if [ "${ANDROID_VERSION}" = "android15" ] && [ "${KERNEL_VERSION}" = "6.6" ]; then
+              if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                echo "Applying android15-6.6 compatibility workaround for task_mmu.c..."
+                sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' \
+                       -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
+                compat_workaround=1
+              fi
+            fi
+
+            # Apply SUSFS kernel patch
+            echo "📦 Applying SUSFS GKI kernel patch..."
+            patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch"
+
+            # Revert Fake kernel patch
+            if [ "$compat_workaround" = 1 ]; then
+              if [ "${ANDROID_VERSION}" = "android15" ] && [ "${KERNEL_VERSION}" = "6.6" ]; then
+                if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                  echo "Reverting android15-6.6 compatibility workaround..."
+                  sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' \
+                         -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
+                fi
+              fi
+            fi
+
+            # Apply hide_stuff patch
             cp "${KP_DIR}/kernel_patches/69_hide_stuff.patch" ./
             if ! patch -p1 -F 3 < 69_hide_stuff.patch; then
-              echo "⚠️ hide_stuff patch had failures (some hunks may not apply)"
+              echo "⚠️ hide_stuff patch had failures"
             fi
+
+            echo "SuSFS added ✅"
           else
             echo "📦 Applying manual hook patch..."
+            cp "${KP_DIR}/kernel_patches/next/scope_min_manual_hooks_v1.6.patch" ./
             if ! patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.6.patch; then
-              echo "⚠️ Manual hook patch had failures (some hunks may not apply)"
+              echo "⚠️ Manual hook patch had failures"
             fi
+          fi
+
+          # Apply build fix patches from repository (unifdef fallback for headers_install)
+          echo "🔧 Applying build fix patches..."
+          if [ -f "${GITHUB_WORKSPACE}/patches/fix-headers-unifdef.patch" ]; then
+            echo "📦 Applying headers_install.sh unifdef fallback fix..."
+            patch -p1 --forward < "${GITHUB_WORKSPACE}/patches/fix-headers-unifdef.patch" || true
           fi
 
           echo "✅ All patches applied"
-
-      - name: "🔧 Fix SUSFS compatibility with KernelSU-Next"
-        if: ${{ github.event.inputs.SUSFS == 'On' }}
-        run: |
-          KSRC="${GITHUB_WORKSPACE}/kernel_platform/${GKI_KERNEL_SRC}"
-          cd "${KSRC}"
-
-          echo "🔧 Adding missing SUSFS functions for KernelSU-Next dev-susfs compatibility..."
-
-          # KernelSU-Next dev-susfs branch references susfs_uname_is_active() and
-          # susfs_set_uname_from_kernel() in supercalls.c, but these functions are
-          # not present in susfs4oki v2.0.0. Add them as compatibility shims.
-
-          # Add function declarations to include/linux/susfs.h
-          if [ -f include/linux/susfs.h ]; then
-            if ! grep -q 'susfs_uname_is_active' include/linux/susfs.h; then
-              sed -i '/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/{
-                N
-                /void susfs_set_uname/a\
-          bool susfs_uname_is_active(void);\
-          int susfs_set_uname_from_kernel(const char *release, const char *version);
-              }' include/linux/susfs.h
-              echo "✅ Added declarations to susfs.h"
-            else
-              echo "ℹ️ Declarations already present in susfs.h"
-            fi
-          fi
-
-          # Add function definitions to fs/susfs.c
-          if [ -f fs/susfs.c ]; then
-            if ! grep -q 'susfs_uname_is_active' fs/susfs.c; then
-              # Insert the new functions right before the #endif of CONFIG_KSU_SUSFS_SPOOF_UNAME
-              sed -i '/^#endif \/\/ #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/i\
-          \
-          bool susfs_uname_is_active(void) {\
-          \treturn READ_ONCE(is_susfs_uname_set);\
-          }\
-          \
-          int susfs_set_uname_from_kernel(const char *release, const char *version) {\
-          \tif (!release || !version)\
-          \t\treturn -EINVAL;\
-          \twrite_seqlock(\&susfs_uname_seqlock);\
-          \tif (!strcmp(release, "default")) {\
-          \t\tstrscpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);\
-          \t} else {\
-          \t\tstrncpy(my_uname.release, release, __NEW_UTS_LEN);\
-          \t}\
-          \tif (!strcmp(version, "default")) {\
-          \t\tstrscpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);\
-          \t} else {\
-          \t\tstrncpy(my_uname.version, version, __NEW_UTS_LEN);\
-          \t}\
-          \tis_susfs_uname_set = true;\
-          \twrite_sequnlock(\&susfs_uname_seqlock);\
-          \treturn 0;\
-          }' fs/susfs.c
-              echo "✅ Added function definitions to susfs.c"
-            else
-              echo "ℹ️ Function definitions already present in susfs.c"
-            fi
-          fi
-
-          echo "✅ SUSFS compatibility fix applied"
 
       - name: "⚙️ Configure kernel options"
         run: |
@@ -466,83 +520,93 @@ jobs:
 
           echo "⚙️ Modifying defconfig: $DEFCONFIG"
 
-          # Enable KSU support
-          echo "CONFIG_KSU=y" >> "${DEFCONFIG}"
+          SCRIPTS_CONFIG="${GKI_KERNEL_SRC}/scripts/config"
 
-          # SUSFS configuration
+          # KernelSU-Next and SUSFS configuration
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            echo "📦 Enabling SUSFS..."
-            echo "CONFIG_KSU_SUSFS=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> "${DEFCONFIG}"
+            echo "📦 Enabling KernelSU + SUSFS..."
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_KSU \
+              --disable CONFIG_KSU_KPROBES_HOOK \
+              --enable CONFIG_KSU_SUSFS \
+              --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
+              --enable CONFIG_KSU_SUSFS_SUS_PATH \
+              --enable CONFIG_KSU_SUSFS_SUS_MOUNT \
+              --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT \
+              --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT \
+              --enable CONFIG_KSU_SUSFS_SUS_KSTAT \
+              --disable CONFIG_KSU_SUSFS_SUS_OVERLAYFS \
+              --enable CONFIG_KSU_SUSFS_TRY_UMOUNT \
+              --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT \
+              --enable CONFIG_KSU_SUSFS_SPOOF_UNAME \
+              --enable CONFIG_KSU_SUSFS_ENABLE_LOG \
+              --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+              --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+              --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+              --enable CONFIG_KSU_SUSFS_SUS_MAP \
+              --disable CONFIG_KSU_SUSFS_SUS_SU \
+              --enable CONFIG_TMPFS_XATTR \
+              --enable CONFIG_TMPFS_POSIX_ACL
           else
-            echo "📦 Enabling manual hook..."
-            echo "CONFIG_KSU_SUSFS=n" >> "${DEFCONFIG}"
-            echo "CONFIG_KSU_MANUAL_HOOK=y" >> "${DEFCONFIG}"
+            echo "📦 Enabling KernelSU with manual hook..."
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_KSU \
+              --disable CONFIG_KSU_SUSFS \
+              --enable CONFIG_KSU_MANUAL_HOOK \
+              --enable CONFIG_TMPFS_XATTR \
+              --enable CONFIG_TMPFS_POSIX_ACL
           fi
-
-          # Mountify support
-          echo "CONFIG_TMPFS_XATTR=y" >> "${DEFCONFIG}"
-          echo "CONFIG_TMPFS_POSIX_ACL=y" >> "${DEFCONFIG}"
 
           # Baseband Guard
           if [ "${{ github.event.inputs.bbg }}" == "On" ]; then
             echo "⚡ Enabling BBG..."
-            echo "CONFIG_BBG=y" >> "${DEFCONFIG}"
-            echo 'CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"' >> "${DEFCONFIG}"
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" --enable CONFIG_BBG
           fi
 
           # BBR network algorithm
           if [ "${{ github.event.inputs.bbr }}" == "On" ]; then
             echo "🌐 Enabling BBR..."
-            echo "CONFIG_TCP_CONG_ADVANCED=y" >> "${DEFCONFIG}"
-            echo "CONFIG_TCP_CONG_BBR=y" >> "${DEFCONFIG}"
-            echo "CONFIG_NET_SCH_FQ=y" >> "${DEFCONFIG}"
-            echo "CONFIG_TCP_CONG_BIC=n" >> "${DEFCONFIG}"
-            echo "CONFIG_TCP_CONG_WESTWOOD=n" >> "${DEFCONFIG}"
-            echo "CONFIG_TCP_CONG_HTCP=n" >> "${DEFCONFIG}"
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_TCP_CONG_ADVANCED \
+              --enable CONFIG_TCP_CONG_BBR \
+              --enable CONFIG_NET_SCH_FQ \
+              --disable CONFIG_TCP_CONG_BIC \
+              --disable CONFIG_TCP_CONG_WESTWOOD \
+              --disable CONFIG_TCP_CONG_HTCP
           fi
 
           # Proxy performance optimization
           if [ "${{ github.event.inputs.proxy }}" == "On" ]; then
             echo "🔧 Enabling proxy optimization..."
-            echo "CONFIG_BPF_STREAM_PARSER=y" >> "${DEFCONFIG}"
-            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "${DEFCONFIG}"
-            echo "CONFIG_NETFILTER_XT_SET=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_MAX=65534" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_BITMAP_IP=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_BITMAP_PORT=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_IP=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_IPMARK=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_IPPORT=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_IPPORTIP=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_IPPORTNET=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_IPMAC=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_MAC=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_NETPORTNET=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_NET=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_NETNET=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_NETPORT=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_HASH_NETIFACE=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP_SET_LIST_SET=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP6_NF_NAT=y" >> "${DEFCONFIG}"
-            echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >> "${DEFCONFIG}"
+            $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+              --enable CONFIG_BPF_STREAM_PARSER \
+              --enable CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+              --enable CONFIG_NETFILTER_XT_SET \
+              --enable CONFIG_IP_SET \
+              --set-val CONFIG_IP_SET_MAX 65534 \
+              --enable CONFIG_IP_SET_BITMAP_IP \
+              --enable CONFIG_IP_SET_BITMAP_IPMAC \
+              --enable CONFIG_IP_SET_BITMAP_PORT \
+              --enable CONFIG_IP_SET_HASH_IP \
+              --enable CONFIG_IP_SET_HASH_IPMARK \
+              --enable CONFIG_IP_SET_HASH_IPPORT \
+              --enable CONFIG_IP_SET_HASH_IPPORTIP \
+              --enable CONFIG_IP_SET_HASH_IPPORTNET \
+              --enable CONFIG_IP_SET_HASH_IPMAC \
+              --enable CONFIG_IP_SET_HASH_MAC \
+              --enable CONFIG_IP_SET_HASH_NETPORTNET \
+              --enable CONFIG_IP_SET_HASH_NET \
+              --enable CONFIG_IP_SET_HASH_NETNET \
+              --enable CONFIG_IP_SET_HASH_NETPORT \
+              --enable CONFIG_IP_SET_HASH_NETIFACE \
+              --enable CONFIG_IP_SET_LIST_SET \
+              --enable CONFIG_IP6_NF_NAT \
+              --enable CONFIG_IP6_NF_TARGET_MASQUERADE
           fi
 
           # O2 optimization for 6.6
-          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "${DEFCONFIG}"
-
-          # Skip unnecessary header install
-          echo "CONFIG_HEADERS_INSTALL=n" >> "${DEFCONFIG}"
+          $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+            --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
           # Disable defconfig check
           if [ -f "${GKI_KERNEL_SRC}/build.config.gki" ]; then
@@ -550,6 +614,31 @@ jobs:
           fi
 
           echo "✅ Kernel options configured"
+
+      - name: "🔧 Pre-build unifdef"
+        run: |
+          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
+          GKI_SRC="${KP_DIR}/${GKI_KERNEL_SRC}"
+
+          echo "🔧 Building unifdef for kernel headers installation..."
+
+          # Pre-compile unifdef from kernel source so it's available in
+          # the Bazel sandbox. The fix-headers-unifdef.patch also patches
+          # headers_install.sh to fall back to system unifdef.
+          if [ -f "${GKI_SRC}/scripts/unifdef.c" ]; then
+            cc -o "${GKI_SRC}/scripts/unifdef" "${GKI_SRC}/scripts/unifdef.c"
+            chmod +x "${GKI_SRC}/scripts/unifdef"
+            echo "✅ Pre-compiled unifdef from kernel source"
+          elif command -v unifdef >/dev/null 2>&1; then
+            cp "$(command -v unifdef)" "${GKI_SRC}/scripts/unifdef"
+            chmod +x "${GKI_SRC}/scripts/unifdef"
+            echo "✅ Copied system unifdef to kernel scripts/"
+          fi
+
+          # Remove abi_gki_protected_exports (in case they were regenerated by patches)
+          rm -f "${GKI_SRC}/android/abi_gki_protected_exports_"* 2>/dev/null || true
+
+          echo "✅ Pre-build fixes ready"
 
       - name: "🔨 Build kernel with Bazel"
         run: |
