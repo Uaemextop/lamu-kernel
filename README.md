@@ -79,7 +79,7 @@ cd $my_top_dir
 git clone git@github.com:MotorolaMobilityLLC/kernel-mtk.git -b android-15-release-vvta35
 git clone git@github.com:MotorolaMobilityLLC/kernel-build-kernel.git -b android-15-release-vvta35
 git clone git@github.com:MotorolaMobilityLLC/kernel-build-bazel_mgk_rules.git -b android-15-release-vvta35
-git clone git@github.com:MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git
+git clone git@github.com:MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git -b android-15-release-vvta35
 git clone git@github.com:MotorolaMobilityLLC/kernel-prebuilts-kernel-build-tools.git -b android-15-release-vvta35
 git clone git@github.com:MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt66xx.git -b android-15-release-vvta35
 git clone git@github.com:MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio.git -b android-15-release-vvta35
