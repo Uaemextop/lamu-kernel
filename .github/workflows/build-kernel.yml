@@ -561,6 +561,15 @@ jobs:
           if [ "${{ github.event.inputs.bbg }}" == "On" ]; then
             echo "⚡ Enabling BBG..."
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" --enable CONFIG_BBG
+            # BBG requires 'baseband_guard' in CONFIG_LSM (checked at build-time by its Makefile)
+            CURRENT_LSM=$(sed -n 's/^CONFIG_LSM="\(.*\)"/\1/p' "${DEFCONFIG}")
+            if [ -n "$CURRENT_LSM" ]; then
+              if ! echo "$CURRENT_LSM" | grep -q "baseband_guard"; then
+                $SCRIPTS_CONFIG --file "${DEFCONFIG}" --set-str CONFIG_LSM "${CURRENT_LSM},baseband_guard"
+              fi
+            else
+              $SCRIPTS_CONFIG --file "${DEFCONFIG}" --set-str CONFIG_LSM "landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"
+            fi
           fi
 
           # BBR network algorithm
