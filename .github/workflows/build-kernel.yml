@@ -103,11 +103,11 @@ jobs:
 
           mkdir -vp $my_top_dir
 
-          cd $my_top_dir/
+          # All external/prebuilts repos must be inside kernel_platform/kernel/
+          # because that is the Bazel workspace root (where WORKSPACE is placed).
+          mkdir -vp $my_top_dir/kernel/external
 
-          mkdir -vp $my_top_dir/external
-
-          cd $my_top_dir/external
+          cd $my_top_dir/kernel/external
 
           git clone --depth 1 https://android.googlesource.com/platform/external/libcap -b android15-release
 
@@ -127,27 +127,27 @@ jobs:
 
           git clone --depth 1 https://android.googlesource.com/platform/external/stardoc -b android15-release
 
-          mkdir -vp $my_top_dir/prebuilts/bazel/linux-x86_64
+          mkdir -vp $my_top_dir/kernel/prebuilts/bazel/linux-x86_64
 
-          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/bazel/linux-x86_64 -b android15-release $my_top_dir/prebuilts/bazel/linux-x86_64
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/bazel/linux-x86_64 -b android15-release $my_top_dir/kernel/prebuilts/bazel/linux-x86_64
 
-          mkdir -vp $my_top_dir/external/python/absl-py
+          mkdir -vp $my_top_dir/kernel/external/python/absl-py
 
-          git clone --depth 1 https://android.googlesource.com/platform/external/python/absl-py -b android15-release $my_top_dir/external/python/absl-py
+          git clone --depth 1 https://android.googlesource.com/platform/external/python/absl-py -b android15-release $my_top_dir/kernel/external/python/absl-py
 
       - name: "⬇️ Clone prebuilts - Clang and GCC"
         run: |
           my_top_dir=$PWD/kernel_platform
 
-          mkdir -vp $my_top_dir/prebuilts/clang/host
+          mkdir -vp $my_top_dir/kernel/prebuilts/clang/host
 
-          cd $my_top_dir/prebuilts/clang/host
+          cd $my_top_dir/kernel/prebuilts/clang/host
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b android15-release
 
-          mkdir -vp $my_top_dir/prebuilts/gcc/linux-x86/host
+          mkdir -vp $my_top_dir/kernel/prebuilts/gcc/linux-x86/host
 
-          cd $my_top_dir/prebuilts/gcc/linux-x86/host
+          cd $my_top_dir/kernel/prebuilts/gcc/linux-x86/host
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 -b android15-release
 
@@ -155,13 +155,15 @@ jobs:
         run: |
           my_top_dir=$PWD/kernel_platform
 
-          cd $my_top_dir/prebuilts
+          mkdir -vp $my_top_dir/kernel/prebuilts
+
+          cd $my_top_dir/kernel/prebuilts
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/build-tools -b android15-release
 
-          mkdir -vp $my_top_dir/prebuilts/jdk
+          mkdir -vp $my_top_dir/kernel/prebuilts/jdk
 
-          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release $my_top_dir/prebuilts/jdk/jdk11
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/jdk/jdk11 -b build-tools-release $my_top_dir/kernel/prebuilts/jdk/jdk11
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/rust -b android15-release
 
@@ -171,13 +173,13 @@ jobs:
         run: |
           my_top_dir=$PWD/kernel_platform
 
-          mkdir -vp $my_top_dir/build/
+          mkdir -vp $my_top_dir/kernel/build/
 
-          git clone --depth 1 https://android.googlesource.com/platform/build/bazel_common_rules -b android15-release $my_top_dir/build/bazel_common_rules
+          git clone --depth 1 https://android.googlesource.com/platform/build/bazel_common_rules -b android15-release $my_top_dir/kernel/build/bazel_common_rules
 
-          mkdir -vp $my_top_dir/system/tools/
+          mkdir -vp $my_top_dir/kernel/system/tools/
 
-          cd $my_top_dir/system/tools/
+          cd $my_top_dir/kernel/system/tools/
 
           git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg -b android15-release
 
@@ -185,12 +187,11 @@ jobs:
         run: |
           my_top_dir=$PWD/kernel_platform
 
-          mkdir -vp $my_top_dir/prebuilts/ndk
+          # workspace.bzl references path = "prebuilts/ndk-r26" (flat dir name)
+          mkdir -vp $my_top_dir/kernel/prebuilts
 
-          cd $my_top_dir/prebuilts/ndk/
-
-          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025
-          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-build-2023
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025 $my_top_dir/kernel/prebuilts/ndk-r26
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-build-2023 $my_top_dir/kernel/prebuilts/ndk-r23
 
       - name: "⬇️ Clone kernel source code"
         run: |
@@ -203,22 +204,23 @@ jobs:
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-build-bazel_mgk_rules.git -b android-15-release-vvta35 kernel/build/bazel_mgk_rules
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-prebuilts-kernel-build-tools.git -b android-15-release-vvta35 kernel/prebuilts/kernel-build-tools
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-kernel_device_modules-6.6.git -b android-15-release-vvta35 kernel/kernel_device_modules-6.6
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt66xx.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt66xx
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt76xx-sdio
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-common.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/common
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-connfem.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/connfem
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-conninfra.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/conninfra
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-fmradio.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/fmradio
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-gps.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/gps
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-adaptor.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/wlan/adaptor
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-gpu.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/gpu
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v3.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/met_drv_v3
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v2.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/met_drv_v2
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-udc.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/udc
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-linux_v2.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/linux_v2
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-mtkcam.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/mtkcam
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-afs_common_utils.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/afs_common_utils
+          # Vendor modules are referenced as //vendor/... from the Bazel workspace root (kernel_platform/kernel/)
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git kernel/vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt66xx.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/bt/mt66xx
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/bt/mt76xx-sdio
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-common.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/common
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-connfem.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/connfem
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-conninfra.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/conninfra
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-fmradio.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/fmradio
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-gps.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/gps
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-adaptor.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/wlan/adaptor
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-gpu.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/gpu
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v3.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/met_drv_v3
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-met_drv_v2.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/met_drv_v2
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-udc.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/udc
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-linux_v2.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/connectivity/bt/linux_v2
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-mtkcam.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/mtkcam
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-afs_common_utils.git -b android-15-release-vvta35 kernel/vendor/mediatek/kernel_modules/afs_common_utils
 
       - name: "🔍 Detect kernel source directory"
         run: |
@@ -507,8 +509,8 @@ jobs:
           export DEFCONFIG_OVERLAYS="mt6768_overlay.config lamu_overlay.config"
           export KERNEL_VERSION=kernel-6.6
           export SOURCE_DATE_EPOCH=0
-          export JAVA_HOME=${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86
-          export PATH="${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86/bin:${PATH}"
+          export JAVA_HOME=${KERNEL_ROOT_DIR}/kernel/prebuilts/jdk/jdk11/linux-x86
+          export PATH="${KERNEL_ROOT_DIR}/kernel/prebuilts/jdk/jdk11/linux-x86/bin:${PATH}"
 
           PRIVATE_BAZEL_BUILD_FLAG="--//build/bazel_mgk_rules:kernel_version=${LINUX_KERNEL_VERSION#kernel-} --experimental_writable_outputs --noenable_bzlmod --config=stamp --repo_manifest=${KERNEL_ROOT_DIR}/${KERNEL_DIR}/fake_manifest.xml"
 
