@@ -103,9 +103,19 @@ jobs:
       - name: "⬇️ Sync kernel source tree (repo)"
         run: |
           mkdir kernel_platform && cd kernel_platform
-          repo init -u ${{ github.server_url }}/${{ github.repository }} \
+          repo init -u ${{ github.server_url }}/${{ github.repository }}.git \
             -b ${{ github.ref_name }} -m manifest.xml --depth=1
           repo sync -c --no-tags --no-clone-bundle -j$(nproc)
+
+          # Create Bazel workspace symlinks (repo linkfiles cannot use '..' components)
+          ln -sf ../external kernel/external
+          ln -sf ../prebuilts kernel/prebuilts
+          ln -sf ../system kernel/system
+          ln -sf ../vendor kernel/vendor
+          mkdir -p kernel/build kernel/tools
+          ln -sf ../../build/bazel_common_rules kernel/build/bazel_common_rules
+          ln -sf ../../system/tools/mkbootimg kernel/tools/mkbootimg
+
           echo "✅ Repo sync complete — workspace and symlinks ready"
           ls -la kernel/
 
