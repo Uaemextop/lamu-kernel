@@ -510,22 +510,27 @@ jobs:
 
           cd ${KERNEL_ROOT_DIR}/kernel
 
-          # Create tools/bazel symlink required by Kleaf build system
-          mkdir -p tools
-          ln -sf ../build/kernel/kleaf/bazel.py tools/bazel
+          # Setup WORKSPACE file required by Bazel (replaces AOSP manifest linkfile)
+          cp build/kernel/kleaf/bazel.WORKSPACE WORKSPACE
 
-          tools/bazel \
+          # Use git-cloned build/kernel/kleaf/bazel.py directly (no symlinks)
+          # The build repo was already cloned via git clone in an earlier step
+          KLEAF_REPO_DIR=$(build/kernel/gettop.sh) || { echo "❌ Failed to determine repo root via gettop.sh"; exit 1; }
+          echo "✅ Workspace root: $KLEAF_REPO_DIR"
+          export PYTHONPATH="$(pwd)/build/kernel/kleaf:${PYTHONPATH:-}"
+
+          python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
             --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
             --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
             build ${PRIVATE_BAZEL_BUILD_FLAG} ${PRIVATE_BAZEL_BUILD_GOAL}
 
-          tools/bazel \
+          python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
             --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
             --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
             run ${PRIVATE_BAZEL_BUILD_FLAG} --nokmi_symbol_list_violations_check ${PRIVATE_BAZEL_DIST_GOAL} \
             -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}
 
-          tools/bazel \
+          python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
             --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
             --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
             run ${PRIVATE_BAZEL_BUILD_FLAG} \
