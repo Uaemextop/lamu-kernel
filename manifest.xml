@@ -6,9 +6,10 @@
   All paths are relative to the repo root (kernel_platform/).
 
   Usage:
-    mkdir kernel_platform && cd kernel_platform
+    mkdir kernel_platform
+    cd kernel_platform
     repo init -u URL_OF_THIS_REPO -m manifest.xml
-    repo sync -c -j$(nproc) -no-tags
+    repo sync -c
 
   After sync the Bazel workspace lives under kernel/ with symlinks
   pointing to top-level external/, prebuilts/, system/, and vendor/.
@@ -182,9 +183,7 @@
   <project path="vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m"
            name="vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m"
            remote="moto"
-           revision="android-15-release-vvta35">
-    <linkfile src="../../../../../.." dest="kernel/vendor" />
-  </project>
+           revision="android-15-release-vvta35" />
 
   <project path="vendor/mediatek/kernel_modules/connectivity/bt/mt66xx"
            name="vendor-mediatek-kernel_modules-connectivity-bt-mt66xx"
@@ -226,10 +225,17 @@
            remote="moto"
            revision="android-15-release-vvta35" />
 
+  <!--
+    vendor/mediatek/kernel_modules/gpu carries the linkfile that
+    creates the workspace symlink: kernel/vendor -> ../vendor
+    (src="../../.." resolves: gpu -> kernel_modules -> mediatek -> vendor)
+  -->
   <project path="vendor/mediatek/kernel_modules/gpu"
            name="vendor-mediatek-kernel_modules-gpu"
            remote="moto"
-           revision="android-15-release-vvta35" />
+           revision="android-15-release-vvta35">
+    <linkfile src="../../.." dest="kernel/vendor" />
+  </project>
 
   <project path="vendor/mediatek/kernel_modules/met_drv_v3"
            name="vendor-mediatek-kernel_modules-met_drv_v3"
