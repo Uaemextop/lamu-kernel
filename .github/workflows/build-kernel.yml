@@ -48,21 +48,6 @@ on:
           - 'Off'
         default: 'Off'
 
-      SUFFIX:
-        description: "Custom kernel version suffix"
-        required: false
-        type: string
-        default: 'lamu-ksu'
-
-      FAST_BUILD:
-        description: "Enable fast build (static version string)"
-        required: false
-        type: choice
-        options:
-          - 'false'
-          - 'true'
-        default: 'false'
-
 jobs:
   build:
     name: Lamu KernelSU Next (SUSFS ${{ github.event.inputs.SUSFS }})
@@ -80,8 +65,6 @@ jobs:
       LINUX_KERNEL_VERSION: kernel-6.6
       ANDROID_VERSION: android15
       KERNEL_VERSION: '6.6'
-      KANDROID_VERSION: android15
-      KERNEL_REPOS: kernel/kernel_device_modules-6.6
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
@@ -264,11 +247,8 @@ jobs:
           # Link build/bazel_common_rules (build/ dir already has build/kernel and build/bazel_mgk_rules)
           ln -sf ../../build/bazel_common_rules build/bazel_common_rules
 
-          # Create 'common' symlink pointing to GKI kernel source (standard AOSP convention)
-          ln -sf ${LINUX_KERNEL_VERSION} common
-
           echo "✅ Workspace symlinks created"
-          ls -la external prebuilts system vendor build/bazel_common_rules common
+          ls -la external prebuilts system vendor build/bazel_common_rules
 
       - name: "🔍 Detect kernel source directory"
         run: |
@@ -299,103 +279,27 @@ jobs:
           fi
           echo "GKI_DEFCONFIG=${GKI_DEFCONFIG}" >> $GITHUB_ENV
 
-      - name: "🔧 Setup version strings and clean build markers"
+      - name: "🔧 Setup version strings"
         run: |
-          cd kernel_platform/kernel
+          cd kernel_platform/${GKI_KERNEL_SRC}
 
-          # ── Bazel stamp cleanup ──
-          # Remove -maybe-dirty from Bazel stable SCM version stamp
-          if [ -f build/kernel/kleaf/impl/stamp.bzl ]; then
-            sed -i "/stable_scmversion_cmd/s/-maybe-dirty//g" build/kernel/kleaf/impl/stamp.bzl
-            echo "✅ Cleaned stamp.bzl"
+          # Remove protected exports
+          rm -f android/abi_gki_protected_exports_* || true
+
+          # Remove -dirty from version strings
+          if [ -f scripts/setlocalversion ]; then
+            sed -i 's/ -dirty//g' scripts/setlocalversion
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' scripts/setlocalversion
           fi
 
-          # ── check_defconfig removal ──
-          # Remove defconfig check from build.config.gki (workspace level)
-          if [ -f build.config.gki ]; then
-            sed -i 's/check_defconfig//' build.config.gki
-            echo "✅ Cleaned build.config.gki (workspace level)"
-          fi
-          # Also from GKI source level
-          if [ -f "${LINUX_KERNEL_VERSION}/build.config.gki" ]; then
-            sed -i 's/check_defconfig//' "${LINUX_KERNEL_VERSION}/build.config.gki"
-            echo "✅ Cleaned build.config.gki (GKI source level)"
-          fi
-          if [ -f common/build.config.gki ]; then
-            sed -i 's/check_defconfig//' common/build.config.gki
-            echo "✅ Cleaned build.config.gki (common symlink level)"
-          fi
-
-          # ── ABI protected exports removal ──
-          rm -rf common/android/abi_gki_protected_exports_* || true
-          rm -rf ${LINUX_KERNEL_VERSION}/android/abi_gki_protected_exports_* || true
-          echo "✅ Removed ABI protected exports"
-
-          # Remove protected_exports_list reference from BUILD.bazel
-          if [ -f common/BUILD.bazel ]; then
-            perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_aarch64",\s*$//;' common/BUILD.bazel
-            echo "✅ Cleaned BUILD.bazel protected_exports_list"
-          fi
-          if [ -f ${LINUX_KERNEL_VERSION}/BUILD.bazel ]; then
-            perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_exports_aarch64",\s*$//;' ${LINUX_KERNEL_VERSION}/BUILD.bazel
-            echo "✅ Cleaned BUILD.bazel protected_exports_list (GKI source)"
-          fi
-
-          # ── Version suffix configuration ──
-          cd $GITHUB_WORKSPACE
-
-          SUFFIX="${{ github.event.inputs.SUFFIX }}"
-          KANDROID_VERSION="${{ env.KANDROID_VERSION }}"
-          FAST_BUILD="${{ github.event.inputs.FAST_BUILD }}"
-
-          # Default suffix if not provided
-          if [ -z "$SUFFIX" ]; then
-            SUFFIX="lamu-ksu"
-          fi
-
-          for path in \
-            kernel_platform/kernel/common/scripts/setlocalversion \
-            kernel_platform/kernel/${LINUX_KERNEL_VERSION}/scripts/setlocalversion \
-            kernel_platform/${KERNEL_REPOS}/scripts/setlocalversion \
-            kernel_platform/kernel/external/dtc/scripts/setlocalversion; do
-
-            [ -f "$path" ] || continue
-
-            echo "Modifying: $path"
-
-            # Remove -dirty
-            sed -i 's/ -dirty//g' "$path"
-            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
-
-            if grep -q 'KERNELVERSION.*scm_version' "$path"; then
-              echo "Detected NEW setlocalversion format"
-              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${KANDROID_VERSION}-${SUFFIX}\"|" "$path"
-
-            elif grep -q 'echo "\$res"' "$path"; then
-              echo "Detected OLD setlocalversion format"
-              if [ "$FAST_BUILD" = "true" ]; then
-                echo "FAST_BUILD enabled: using static res"
-                sed -i "s/^res=.*/res=\"-${KANDROID_VERSION}-${SUFFIX}\"/" "$path"
-              else
-                echo "Standard build: injecting suffix via cut/echo"
-                if [[ -f ./kernel_platform/build_with_bazel.py ]]; then
-                  echo "When using build_with_bazel, build may fail due to special character limits. Please modify if that happens."
-                fi
-                tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path"
-              fi
-            else
-              echo "Unknown format, appending echo manually"
-              echo "echo \"\$res-${SUFFIX}\"" >> "$path"
-            fi
-
-            chmod +x "$path"
-          done
-
-          # ── Custom version suffix for GKI defconfig ──
-          cd kernel_platform/kernel/${LINUX_KERNEL_VERSION}
+          # Customize version suffix for 6.6 kernel
           if [ -f arch/arm64/configs/gki_defconfig ]; then
-            ESCAPED_SUFFIX=$(printf '%s\n' "-${ANDROID_VERSION}-${SUFFIX}" | sed 's:[\/&]:\\&:g')
+            ESCAPED_SUFFIX=$(printf '%s\n' "-${ANDROID_VERSION}-lamu-ksu" | sed 's:[\/&]:\\&:g')
             sed -i "s/-4k/$ESCAPED_SUFFIX/g" arch/arm64/configs/gki_defconfig || true
+          fi
+
+          if [ -f scripts/setlocalversion ]; then
+            sed -i 's/${scm_version}//' scripts/setlocalversion || true
           fi
 
           echo "✅ Version strings configured"
@@ -647,6 +551,11 @@ jobs:
 
           # Skip unnecessary header install
           echo "CONFIG_HEADERS_INSTALL=n" >> "${DEFCONFIG}"
+
+          # Disable defconfig check
+          if [ -f "${GKI_KERNEL_SRC}/build.config.gki" ]; then
+            sed -i 's/check_defconfig//' "${GKI_KERNEL_SRC}/build.config.gki"
+          fi
 
           echo "✅ Kernel options configured"
 
