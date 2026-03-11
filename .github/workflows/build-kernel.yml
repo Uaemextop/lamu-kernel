@@ -390,6 +390,69 @@ jobs:
 
           echo "✅ All patches applied"
 
+      - name: "🔧 Fix SUSFS compatibility with KernelSU-Next"
+        if: ${{ github.event.inputs.SUSFS == 'On' }}
+        run: |
+          KSRC="${GITHUB_WORKSPACE}/kernel_platform/${GKI_KERNEL_SRC}"
+          cd "${KSRC}"
+
+          echo "🔧 Adding missing SUSFS functions for KernelSU-Next dev-susfs compatibility..."
+
+          # KernelSU-Next dev-susfs branch references susfs_uname_is_active() and
+          # susfs_set_uname_from_kernel() in supercalls.c, but these functions are
+          # not present in susfs4oki v2.0.0. Add them as compatibility shims.
+
+          # Add function declarations to include/linux/susfs.h
+          if [ -f include/linux/susfs.h ]; then
+            if ! grep -q 'susfs_uname_is_active' include/linux/susfs.h; then
+              sed -i '/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/{
+                N
+                /void susfs_set_uname/a\
+          bool susfs_uname_is_active(void);\
+          int susfs_set_uname_from_kernel(const char *release, const char *version);
+              }' include/linux/susfs.h
+              echo "✅ Added declarations to susfs.h"
+            else
+              echo "ℹ️ Declarations already present in susfs.h"
+            fi
+          fi
+
+          # Add function definitions to fs/susfs.c
+          if [ -f fs/susfs.c ]; then
+            if ! grep -q 'susfs_uname_is_active' fs/susfs.c; then
+              # Insert the new functions right before the #endif of CONFIG_KSU_SUSFS_SPOOF_UNAME
+              sed -i '/^#endif \/\/ #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/i\
+          \
+          bool susfs_uname_is_active(void) {\
+          \treturn READ_ONCE(is_susfs_uname_set);\
+          }\
+          \
+          int susfs_set_uname_from_kernel(const char *release, const char *version) {\
+          \tif (!release || !version)\
+          \t\treturn -EINVAL;\
+          \twrite_seqlock(\&susfs_uname_seqlock);\
+          \tif (!strcmp(release, "default")) {\
+          \t\tstrscpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);\
+          \t} else {\
+          \t\tstrncpy(my_uname.release, release, __NEW_UTS_LEN);\
+          \t}\
+          \tif (!strcmp(version, "default")) {\
+          \t\tstrscpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);\
+          \t} else {\
+          \t\tstrncpy(my_uname.version, version, __NEW_UTS_LEN);\
+          \t}\
+          \tis_susfs_uname_set = true;\
+          \twrite_sequnlock(\&susfs_uname_seqlock);\
+          \treturn 0;\
+          }' fs/susfs.c
+              echo "✅ Added function definitions to susfs.c"
+            else
+              echo "ℹ️ Function definitions already present in susfs.c"
+            fi
+          fi
+
+          echo "✅ SUSFS compatibility fix applied"
+
       - name: "⚙️ Configure kernel options"
         run: |
           KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
@@ -513,7 +576,7 @@ jobs:
           export JAVA_HOME=${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86
           export PATH="${KERNEL_ROOT_DIR}/prebuilts/jdk/jdk11/linux-x86/bin:${PATH}"
 
-          PRIVATE_BAZEL_BUILD_FLAG="--//build/bazel_mgk_rules:kernel_version=${LINUX_KERNEL_VERSION#kernel-} --experimental_writable_outputs --noenable_bzlmod --config=stamp --repo_manifest=${KERNEL_ROOT_DIR}/${KERNEL_DIR}/fake_manifest.xml"
+          PRIVATE_BAZEL_BUILD_FLAG="--//build/bazel_mgk_rules:kernel_version=${LINUX_KERNEL_VERSION#kernel-} --experimental_writable_outputs --noenable_bzlmod --config=stamp --repo_manifest=${KERNEL_ROOT_DIR}/${KERNEL_DIR}/fake_manifest.xml --sandbox_debug --verbose_failures"
 
           my_kernel_target=${KERNEL_DEFCONFIG%_defconfig}
 
@@ -564,10 +627,14 @@ jobs:
             cp "$image_path" AnyKernel3/Image
             cp "$image_path" kernel_platform/out/Final-Image-Find/Image
           else
-            echo "Image not found in build output, checking dist directory..."
+            echo "Image not found via find, checking dist directory..."
             if [ -f "kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/Image" ]; then
               cp kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/Image AnyKernel3/Image
               cp kernel_platform/out/target/product/lamu/obj/KLEAF_OBJ/dist/Image kernel_platform/out/Final-Image-Find/Image
+            else
+              echo "❌ ERROR: Kernel Image not found in any build output location"
+              find kernel_platform/out/ -name "Image*" -type f 2>/dev/null || echo "No Image files found"
+              exit 1
             fi
           fi
 
