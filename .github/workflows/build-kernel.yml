@@ -127,6 +127,10 @@ jobs:
 
           git clone --depth 1 https://android.googlesource.com/platform/external/stardoc -b android15-release
 
+          git clone --depth 1 https://android.googlesource.com/platform/external/zopfli -b android15-release
+
+          git clone --depth 1 https://android.googlesource.com/platform/external/pigz -b main-kernel
+
           mkdir -vp $my_top_dir/prebuilts/bazel/linux-x86_64
 
           git clone --depth 1 https://android.googlesource.com/platform/prebuilts/bazel/linux-x86_64 -b android15-release $my_top_dir/prebuilts/bazel/linux-x86_64
@@ -185,12 +189,8 @@ jobs:
         run: |
           my_top_dir=$PWD/kernel_platform
 
-          mkdir -vp $my_top_dir/prebuilts/ndk
-
-          cd $my_top_dir/prebuilts/ndk/
-
-          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025
-          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-build-2023
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r26 -b main-kernel-2025 $my_top_dir/prebuilts/ndk-r26
+          git clone --depth 1 https://android.googlesource.com/toolchain/prebuilts/ndk/r23 -b main-kernel-build-2023 $my_top_dir/prebuilts/ndk-r23
 
       - name: "⬇️ Clone kernel source code"
         run: |
@@ -201,9 +201,9 @@ jobs:
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-mtk.git -b android-15-release-vvta35 kernel
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-build-kernel.git -b android-15-release-vvta35 kernel/build/kernel
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-build-bazel_mgk_rules.git -b android-15-release-vvta35 kernel/build/bazel_mgk_rules
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-prebuilts-kernel-build-tools.git -b android-15-release-vvta35 kernel/prebuilts/kernel-build-tools
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-prebuilts-kernel-build-tools.git -b android-15-release-vvta35 prebuilts/kernel-build-tools
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/kernel-kernel_device_modules-6.6.git -b android-15-release-vvta35 kernel/kernel_device_modules-6.6
-          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m
+          git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-wlan-core-gen4m.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4m
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt66xx.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt66xx
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-mt76xx-sdio.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/mt76xx-sdio
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-common.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/common
@@ -219,6 +219,33 @@ jobs:
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-connectivity-bt-linux_v2.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/connectivity/bt/linux_v2
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-mtkcam.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/mtkcam
           git clone --depth 1 https://github.com/MotorolaMobilityLLC/vendor-mediatek-kernel_modules-afs_common_utils.git -b android-15-release-vvta35 vendor/mediatek/kernel_modules/afs_common_utils
+
+      - name: "🔗 Create workspace symlinks"
+        run: |
+          my_top_dir=$PWD/kernel_platform
+
+          cd $my_top_dir/kernel
+
+          # Self-reference for //kernel-6.6: Bazel targets (GKI kernel source is the workspace root)
+          ln -sf . kernel-6.6
+
+          # Link external dependencies into workspace
+          ln -sf ../external external
+
+          # Link prebuilts into workspace
+          ln -sf ../prebuilts prebuilts
+
+          # Link system tools into workspace
+          ln -sf ../system system
+
+          # Link vendor modules into workspace
+          ln -sf ../vendor vendor
+
+          # Link build/bazel_common_rules (build/ dir already has build/kernel and build/bazel_mgk_rules)
+          ln -sf ../../build/bazel_common_rules build/bazel_common_rules
+
+          echo "✅ Workspace symlinks created"
+          ls -la kernel-6.6 external prebuilts system vendor build/bazel_common_rules
 
       - name: "🔍 Detect kernel source directory"
         run: |
