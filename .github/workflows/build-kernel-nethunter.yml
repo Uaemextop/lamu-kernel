@@ -1,4 +1,4 @@
-name: Build Kernel with KernelSU Next
+name: Build Kernel with Ksu and Nethunter
 
 on:
   workflow_dispatch:
