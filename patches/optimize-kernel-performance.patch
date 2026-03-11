@@ -1,0 +1,319 @@
+diff --git a/arch/arm64/configs/gki_defconfig b/arch/arm64/configs/gki_defconfig
+index 4d4a5b282..ac4e90fb7 100644
+--- a/arch/arm64/configs/gki_defconfig
++++ b/arch/arm64/configs/gki_defconfig
+@@ -1,7 +1,6 @@
+ CONFIG_UAPI_HEADER_TEST=y
+ CONFIG_LOCALVERSION="-4k"
+ CONFIG_AUDIT=y
+-CONFIG_TIME_KUNIT_TEST=m
+ CONFIG_NO_HZ=y
+ CONFIG_HIGH_RES_TIMERS=y
+ CONFIG_BPF_SYSCALL=y
+@@ -75,8 +74,6 @@ CONFIG_PM_USERSPACE_AUTOSLEEP=y
+ CONFIG_PM_WAKELOCKS=y
+ CONFIG_PM_WAKELOCKS_LIMIT=0
+ # CONFIG_PM_WAKELOCKS_GC is not set
+-CONFIG_PM_DEBUG=y
+-CONFIG_PM_ADVANCED_DEBUG=y
+ CONFIG_ENERGY_MODEL=y
+ CONFIG_CPU_IDLE=y
+ CONFIG_CPU_IDLE_GOV_MENU=y
+@@ -91,7 +88,6 @@ CONFIG_ARM_SCPI_CPUFREQ=y
+ CONFIG_ARM_SCMI_CPUFREQ=y
+ CONFIG_VIRTUALIZATION=y
+ CONFIG_KVM=y
+-CONFIG_PTDUMP_STAGE2_DEBUGFS=y
+ CONFIG_KPROBES=y
+ CONFIG_JUMP_LABEL=y
+ CONFIG_SHADOW_CALL_STACK=y
+@@ -126,7 +122,6 @@ CONFIG_TRANSPARENT_HUGEPAGE=y
+ CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
+ CONFIG_CLEANCACHE=y
+ CONFIG_CMA=y
+-CONFIG_CMA_DEBUGFS=y
+ CONFIG_CMA_AREAS=16
+ # CONFIG_ZONE_DMA is not set
+ CONFIG_ANON_VMA_NAME=y
+@@ -316,7 +311,6 @@ CONFIG_PCIE_QCOM=y
+ CONFIG_PCI_ENDPOINT=y
+ CONFIG_FW_LOADER_USER_HELPER=y
+ # CONFIG_FW_CACHE is not set
+-CONFIG_REGMAP_KUNIT=m
+ # CONFIG_SUN50I_DE2_BUS is not set
+ # CONFIG_SUNXI_RSB is not set
+ CONFIG_ARM_SCMI_PROTOCOL=y
+@@ -397,7 +391,6 @@ CONFIG_USB_NET_AQC111=m
+ CONFIG_WWAN=m
+ # CONFIG_WWAN_DEBUGFS is not set
+ CONFIG_INPUT_EVDEV=y
+-CONFIG_INPUT_KUNIT_TEST=m
+ CONFIG_KEYBOARD_GPIO=y
+ # CONFIG_MOUSE_PS2 is not set
+ CONFIG_INPUT_JOYSTICK=y
+@@ -497,8 +490,6 @@ CONFIG_SND_HRTIMER=y
+ # CONFIG_SND_DRIVERS is not set
+ CONFIG_SND_USB_AUDIO=y
+ CONFIG_SND_SOC=y
+-CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=m
+-CONFIG_SND_SOC_UTILS_KUNIT_TEST=m
+ CONFIG_HID_BATTERY_STRENGTH=y
+ CONFIG_HIDRAW=y
+ CONFIG_UHID=y
+@@ -522,7 +513,6 @@ CONFIG_SONY_FF=y
+ CONFIG_HID_STEAM=y
+ CONFIG_HID_WACOM=y
+ CONFIG_HID_WIIMOTE=y
+-CONFIG_HID_KUNIT_TEST=m
+ CONFIG_USB_HIDDEV=y
+ CONFIG_USB_ANNOUNCE_NEW_DEVICES=y
+ CONFIG_USB_OTG=y
+@@ -577,7 +567,6 @@ CONFIG_LEDS_TRIGGER_TIMER=y
+ CONFIG_LEDS_TRIGGER_TRANSIENT=y
+ CONFIG_EDAC=y
+ CONFIG_RTC_CLASS=y
+-CONFIG_RTC_LIB_KUNIT_TEST=m
+ CONFIG_RTC_DRV_PL030=y
+ CONFIG_RTC_DRV_PL031=y
+ CONFIG_DMABUF_HEAPS=y
+@@ -598,8 +587,6 @@ CONFIG_STAGING=y
+ CONFIG_ASHMEM=y
+ CONFIG_COMMON_CLK_SCPI=y
+ # CONFIG_SUNXI_CCU is not set
+-CONFIG_CLK_KUNIT_TEST=m
+-CONFIG_CLK_GATE_KUNIT_TEST=m
+ CONFIG_HWSPINLOCK=y
+ # CONFIG_SUN50I_ERRATUM_UNKNOWN1 is not set
+ CONFIG_IOMMU_IO_PGTABLE_ARMV7S=y
+@@ -617,7 +604,6 @@ CONFIG_MEMORY=y
+ CONFIG_IIO=y
+ CONFIG_IIO_BUFFER=y
+ CONFIG_IIO_TRIGGER=y
+-CONFIG_IIO_FORMAT_KUNIT_TEST=m
+ CONFIG_PWM=y
+ CONFIG_POWERCAP=y
+ CONFIG_IDLE_INJECT=y
+@@ -626,14 +612,11 @@ CONFIG_DTPM_CPU=y
+ CONFIG_DTPM_DEVFREQ=y
+ CONFIG_ANDROID_BINDER_IPC=y
+ CONFIG_ANDROID_BINDERFS=y
+-CONFIG_ANDROID_DEBUG_SYMBOLS=y
+ CONFIG_ANDROID_VENDOR_HOOKS=y
+-CONFIG_ANDROID_DEBUG_KINFO=y
+ CONFIG_LIBNVDIMM=y
+ CONFIG_EXT4_FS=y
+ CONFIG_EXT4_FS_POSIX_ACL=y
+ CONFIG_EXT4_FS_SECURITY=y
+-CONFIG_EXT4_KUNIT_TESTS=m
+ CONFIG_F2FS_FS=y
+ CONFIG_F2FS_FS_SECURITY=y
+ CONFIG_F2FS_FS_COMPRESSION=y
+@@ -651,7 +634,6 @@ CONFIG_OVERLAY_FS=y
+ CONFIG_INCREMENTAL_FS=y
+ CONFIG_MSDOS_FS=y
+ CONFIG_VFAT_FS=y
+-CONFIG_FAT_KUNIT_TEST=m
+ CONFIG_EXFAT_FS=y
+ CONFIG_TMPFS=y
+ # CONFIG_EFIVAR_FS is not set
+@@ -740,46 +722,44 @@ CONFIG_CRYPTO_SHA2_ARM64_CE=y
+ CONFIG_CRYPTO_SHA512_ARM64_CE=y
+ CONFIG_CRYPTO_POLYVAL_ARM64_CE=y
+ CONFIG_CRYPTO_AES_ARM64_CE_BLK=y
+-CONFIG_TRACE_MMIO_ACCESS=y
+ CONFIG_CRC_CCITT=y
+ CONFIG_XZ_DEC=y
+ CONFIG_SWIOTLB_DYNAMIC=y
+ CONFIG_DMA_RESTRICTED_POOL=y
+ CONFIG_DMA_CMA=y
+-CONFIG_PRINTK_TIME=y
+ CONFIG_PRINTK_CALLER=y
+-CONFIG_STACKTRACE_BUILD_ID=y
+-CONFIG_DYNAMIC_DEBUG_CORE=y
+-CONFIG_DEBUG_INFO_DWARF5=y
+-CONFIG_DEBUG_INFO_COMPRESSED_ZSTD=y
+ CONFIG_DEBUG_INFO_BTF=y
+ CONFIG_MODULE_ALLOW_BTF_MISMATCH=y
+ CONFIG_HEADERS_INSTALL=y
+ # CONFIG_SECTION_MISMATCH_WARN_ONLY is not set
+ CONFIG_MAGIC_SYSRQ=y
+-CONFIG_UBSAN=y
+-CONFIG_UBSAN_TRAP=y
+-# CONFIG_UBSAN_SHIFT is not set
+-# CONFIG_UBSAN_BOOL is not set
+-# CONFIG_UBSAN_ENUM is not set
+-CONFIG_PAGE_OWNER=y
+-CONFIG_PAGE_PINNER=y
+-CONFIG_DEBUG_MEMORY_INIT=y
+-CONFIG_KASAN=y
+-CONFIG_KASAN_HW_TAGS=y
+-CONFIG_KFENCE=y
+-CONFIG_KFENCE_SAMPLE_INTERVAL=500
+-CONFIG_KFENCE_NUM_OBJECTS=63
+ CONFIG_PANIC_ON_OOPS=y
+-CONFIG_PANIC_TIMEOUT=-1
+-CONFIG_SOFTLOCKUP_DETECTOR=y
+-CONFIG_WQ_WATCHDOG=y
+-CONFIG_SCHEDSTATS=y
+-CONFIG_HIST_TRIGGERS=y
+-CONFIG_PID_IN_CONTEXTIDR=y
+-CONFIG_KUNIT=m
+-CONFIG_KUNIT_DEBUGFS=y
+-CONFIG_KUNIT_TEST=m
+-CONFIG_KUNIT_EXAMPLE_TEST=m
+-# CONFIG_KUNIT_DEFAULT_ENABLED is not set
++CONFIG_PANIC_TIMEOUT=5
+ # CONFIG_RUNTIME_TESTING_MENU is not set
++
++# Performance optimizations
++CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
++CONFIG_HZ_300=y
++CONFIG_HZ=300
++CONFIG_TCP_FASTOPEN=y
++CONFIG_ZSWAP=y
++CONFIG_ZSWAP_DEFAULT_ON=y
++# CONFIG_KASAN is not set
++# CONFIG_KFENCE is not set
++# CONFIG_UBSAN is not set
++# CONFIG_SOFTLOCKUP_DETECTOR is not set
++# CONFIG_SCHEDSTATS is not set
++# CONFIG_DEBUG_MEMORY_INIT is not set
++# CONFIG_PAGE_OWNER is not set
++# CONFIG_PAGE_PINNER is not set
++# CONFIG_WQ_WATCHDOG is not set
++# CONFIG_PM_DEBUG is not set
++# CONFIG_PM_ADVANCED_DEBUG is not set
++# CONFIG_CMA_DEBUGFS is not set
++# CONFIG_TRACE_MMIO_ACCESS is not set
++# CONFIG_HIST_TRIGGERS is not set
++# CONFIG_PRINTK_TIME is not set
++# CONFIG_DYNAMIC_DEBUG_CORE is not set
++# CONFIG_PID_IN_CONTEXTIDR is not set
++CONFIG_MMC_CRYPTO=y
++CONFIG_CRYPTO_LZ4=y
+diff --git a/block/bfq-iosched.c b/block/bfq-iosched.c
+index 617d6802b..c7a92eec1 100644
+--- a/block/bfq-iosched.c
++++ b/block/bfq-iosched.c
+@@ -171,7 +171,7 @@ static const int bfq_back_max = 16 * 1024;
+ static const int bfq_back_penalty = 2;
+ 
+ /* Idling period duration, in ns. */
+-static u64 bfq_slice_idle = NSEC_PER_SEC / 125;
++static u64 bfq_slice_idle = NSEC_PER_SEC / 250;
+ 
+ /* Minimum number of assigned budgets for which stats are safe to compute. */
+ static const int bfq_stats_min_budgets = 194;
+diff --git a/drivers/mmc/core/queue.c b/drivers/mmc/core/queue.c
+index a87d15d14..eccce008c 100644
+--- a/drivers/mmc/core/queue.c
++++ b/drivers/mmc/core/queue.c
+@@ -21,7 +21,7 @@
+ #include "crypto.h"
+ #include "host.h"
+ 
+-#define MMC_DMA_MAP_MERGE_SEGMENTS	512
++#define MMC_DMA_MAP_MERGE_SEGMENTS	1024
+ 
+ static inline bool mmc_cqe_dcmd_busy(struct mmc_queue *mq)
+ {
+@@ -395,7 +395,7 @@ static inline bool mmc_merge_capable(struct mmc_host *host)
+ }
+ 
+ /* Set queue depth to get a reasonable value for q->nr_requests */
+-#define MMC_QUEUE_DEPTH 64
++#define MMC_QUEUE_DEPTH 128
+ 
+ /**
+  * mmc_init_queue - initialise a queue structure.
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index a0c31ea9a..4f0bce58d 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -74,7 +74,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(sched_stat_runtime);
+  *
+  * (default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
+  */
+-unsigned int sysctl_sched_latency			= 6000000ULL;
++unsigned int sysctl_sched_latency			= 4000000ULL;
+ EXPORT_SYMBOL_GPL(sysctl_sched_latency);
+ 
+ /*
+@@ -95,9 +95,9 @@ unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
+  *
+  * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
+  */
+-unsigned int sysctl_sched_base_slice			= 750000ULL;
++unsigned int sysctl_sched_base_slice			= 500000ULL;
+ EXPORT_SYMBOL_GPL(sysctl_sched_base_slice);
+-static unsigned int normalized_sysctl_sched_base_slice	= 750000ULL;
++static unsigned int normalized_sysctl_sched_base_slice	= 500000ULL;
+ 
+ /*
+  * After fork, child runs first. If set to 0 (default) then
+@@ -105,7 +105,7 @@ static unsigned int normalized_sysctl_sched_base_slice	= 750000ULL;
+  */
+ unsigned int sysctl_sched_child_runs_first __read_mostly;
+ 
+-const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
++const_debug unsigned int sysctl_sched_migration_cost	= 250000UL;
+ 
+ int sched_thermal_decay_shift;
+ static int __init setup_sched_thermal_decay_shift(char *str)
+diff --git a/mm/compaction.c b/mm/compaction.c
+index 8ff3b40b7..45b4801a5 100644
+--- a/mm/compaction.c
++++ b/mm/compaction.c
+@@ -1852,7 +1852,7 @@ static int sysctl_compact_unevictable_allowed __read_mostly = CONFIG_COMPACT_UNE
+  * aggressively the kernel should compact memory in the
+  * background. It takes values in the range [0, 100].
+  */
+-static unsigned int __read_mostly sysctl_compaction_proactiveness = 20;
++static unsigned int __read_mostly sysctl_compaction_proactiveness = 30;
+ static int sysctl_extfrag_threshold = 500;
+ static int __read_mostly sysctl_compact_memory;
+ 
+diff --git a/mm/page-writeback.c b/mm/page-writeback.c
+index 2b93a86c9..8008a2b77 100644
+--- a/mm/page-writeback.c
++++ b/mm/page-writeback.c
+@@ -72,7 +72,7 @@ static long ratelimit_pages = 32;
+ /*
+  * Start background writeback (via writeback threads) at this percentage
+  */
+-static int dirty_background_ratio = 10;
++static int dirty_background_ratio = 5;
+ 
+ /*
+  * dirty_background_bytes starts at 0 (disabled) so that it is a function of
+@@ -89,7 +89,7 @@ static int vm_highmem_is_dirtyable;
+ /*
+  * The generator of dirty data starts writeback at this percentage
+  */
+-static int vm_dirty_ratio = 20;
++static int vm_dirty_ratio = 15;
+ 
+ /*
+  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
+@@ -107,7 +107,7 @@ EXPORT_SYMBOL_GPL(dirty_writeback_interval);
+ /*
+  * The longest time for which data is allowed to remain dirty
+  */
+-unsigned int dirty_expire_interval = 30 * 100; /* centiseconds */
++unsigned int dirty_expire_interval = 20 * 100; /* centiseconds */
+ 
+ /*
+  * Flag that puts the machine in "laptop mode". Doubles as a timeout in jiffies:
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index fe36cff15..ad56c0e14 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -198,7 +198,7 @@ struct scan_control {
+ /*
+  * From 0 .. 200.  Higher means more swappy.
+  */
+-int vm_swappiness = 60;
++int vm_swappiness = 40;
+ 
+ LIST_HEAD(shrinker_list);
+ DECLARE_RWSEM(shrinker_rwsem);
