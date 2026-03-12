@@ -312,7 +312,10 @@ jobs:
             #  + overwrite_hook_mode + ksu_toolkit, verified against KernelSU-Next v3.1.0 stable)
             echo "📦 Applying SUSFS KernelSU integration patch..."
             cd ./KernelSU-Next
-            patch -p1 --forward < "${GITHUB_WORKSPACE}/patches/ksu-next-susfs-v2.0.0-for-v3.1.0.patch"
+            if ! patch -p1 --forward < "${GITHUB_WORKSPACE}/patches/ksu-next-susfs-v2.0.0-for-v3.1.0.patch"; then
+              echo "❌ SUSFS KernelSU integration patch failed!"
+              exit 1
+            fi
             cd "${KSRC}"
 
             # Fake kernel patch to fix task_mmu.c failures (android15-6.6)
@@ -404,15 +407,10 @@ jobs:
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
               --enable CONFIG_KSU \
               --enable CONFIG_KSU_SUSFS \
-              --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
               --enable CONFIG_KSU_SUSFS_SUS_PATH \
               --enable CONFIG_KSU_SUSFS_SUS_MOUNT \
-              --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT \
-              --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT \
               --enable CONFIG_KSU_SUSFS_SUS_KSTAT \
               --disable CONFIG_KSU_SUSFS_SUS_OVERLAYFS \
-              --enable CONFIG_KSU_SUSFS_TRY_UMOUNT \
-              --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT \
               --enable CONFIG_KSU_SUSFS_SPOOF_UNAME \
               --enable CONFIG_KSU_SUSFS_ENABLE_LOG \
               --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
