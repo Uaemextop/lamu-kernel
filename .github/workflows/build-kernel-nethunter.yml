@@ -675,10 +675,16 @@ jobs:
             --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE \
             --enable CONFIG_LRU_GEN_ENABLED
 
-          # MTK modules (mmqos-mtk.c) depend on mrdump_mini_add_extra_file()
-          # which requires CONFIG_ANDROID_DEBUG_SYMBOLS & CONFIG_ANDROID_DEBUG_KINFO.
-          # These must stay enabled even when other debug configs are disabled.
+          # MTK modules (mmqos-mtk.c) depend on mrdump_mini_add_extra_file().
+          # mmqos-mtk.c includes <mt-plat/mrdump.h> only inside
+          # #if IS_ENABLED(CONFIG_DEBUG_FS), but calls the function under
+          # #if IS_ENABLED(CONFIG_MTK_AEE_IPANIC) && IS_ENABLED(CONFIG_ARM64).
+          # Since CONFIG_MTK_AEE_IPANIC=m in mgk_64_k66_defconfig, DEBUG_FS
+          # must be enabled so the include (and function declaration) is active.
+          # CONFIG_ANDROID_DEBUG_SYMBOLS & CONFIG_ANDROID_DEBUG_KINFO are also
+          # required by other MTK debug infrastructure.
           $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+            --enable CONFIG_DEBUG_FS \
             --enable CONFIG_ANDROID_DEBUG_SYMBOLS \
             --enable CONFIG_ANDROID_DEBUG_KINFO
 
