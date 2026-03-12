@@ -791,12 +791,20 @@ jobs:
             run ${PRIVATE_BAZEL_BUILD_FLAG} --nokmi_symbol_list_violations_check ${PRIVATE_BAZEL_DIST_GOAL} \
             -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}
 
-          python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
-            --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
-            --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
-            run ${PRIVATE_BAZEL_BUILD_FLAG} \
-            //${LINUX_KERNEL_VERSION}:kernel_aarch64_abi_dist \
-            -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}/abi
+          # Skip GKI ABI dist when Nethunter is enabled: Nethunter configs add
+          # extra modules (BT, CAN, SDR, USB-serial) to gki_defconfig that are
+          # not declared in the GKI kernel-6.6 BUILD.bazel module_outs.
+          # The MGK dist above already produces all needed kernel images and modules.
+          if [ "${{ github.event.inputs.nethunter }}" != "On" ]; then
+            python3 build/kernel/kleaf/bazel.py "$KLEAF_REPO_DIR" \
+              --output_root=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT} \
+              --output_base=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_BUILD_OUT}/bazel/output_user_root/output_base \
+              run ${PRIVATE_BAZEL_BUILD_FLAG} \
+              //${LINUX_KERNEL_VERSION}:kernel_aarch64_abi_dist \
+              -- --dist_dir=${KERNEL_ROOT_DIR}/${KERNEL_BAZEL_DIST_OUT}/abi
+          else
+            echo "⏩ Skipping GKI ABI dist (Nethunter modules not in GKI module_outs)"
+          fi
 
           echo "✅ Kernel build complete"
 
