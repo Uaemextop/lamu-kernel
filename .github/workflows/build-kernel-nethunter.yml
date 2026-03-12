@@ -228,7 +228,7 @@ jobs:
           cd KernelSU-Next
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
             # Use -legacy-susfs variant which already has SUSFS pre-integrated
-            LATEST_TAG=$(git tag -l 'v*-legacy-susfs' | sort -V | tail -1)
+            LATEST_TAG=$(git tag -l 'v*-legacy-susfs' --sort=-version:refname | head -1)
             if [ -z "$LATEST_TAG" ]; then
               echo "⚠️ No -legacy-susfs tag found, falling back to latest tag"
               LATEST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "")
