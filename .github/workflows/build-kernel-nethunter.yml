@@ -69,7 +69,7 @@ on:
 jobs:
   build:
     name: Lamu KernelSU Next (SUSFS ${{ github.event.inputs.SUSFS }})
-    runs-on: aapt2
+    runs-on: mp4
 
     permissions:
       contents: write
@@ -674,6 +674,13 @@ jobs:
           $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
             --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE \
             --enable CONFIG_LRU_GEN_ENABLED
+
+          # MTK modules (mmqos-mtk.c) depend on mrdump_mini_add_extra_file()
+          # which requires CONFIG_ANDROID_DEBUG_SYMBOLS & CONFIG_ANDROID_DEBUG_KINFO.
+          # These must stay enabled even when other debug configs are disabled.
+          $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
+            --enable CONFIG_ANDROID_DEBUG_SYMBOLS \
+            --enable CONFIG_ANDROID_DEBUG_KINFO
 
           # Disable defconfig check
           if [ -f "${GKI_KERNEL_SRC}/build.config.gki" ]; then
