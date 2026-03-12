@@ -49,7 +49,7 @@ on:
         default: 'Off'
 
       optimize:
-        description: "Apply safe community kernel optimizations (legacy scheduler/VM/storage patch stays disabled)"
+        description: "Apply safe community kernel optimizations (legacy scheduler/VM/storage patch remains disabled)"
         required: true
         type: choice
         options:
@@ -442,7 +442,7 @@ jobs:
 
           echo "✅ All patches applied"
 
-      - name: "⚡ Skip legacy risky optimization patch"
+      - name: "⚡ Skip legacy optimization patch (boot stability)"
         if: ${{ github.event.inputs.optimize == 'On' }}
         run: |
           echo "⚠️ Skipping patches/optimize-kernel-performance.patch on lamu."
@@ -878,6 +878,7 @@ jobs:
             - **Android version**: 15
 
             ### ⚡ Performance Optimizations (when enabled)
+            - **Safe optimize path**: keeps only compiler and community patch tuning on lamu
             - **Legacy scheduler/VM/storage patch**: intentionally skipped on lamu for boot stability
             - **Compiler**: -O2 optimization
             - **Community patches**: CACHE_HOT_BUDDY disabled, F2FS congestion/fsync tuned, EXT4 commit age, socket buffers, freeze timeout, alarmtimer wakeup, IRQ logspam silenced, VFS cache pressure reduced
