@@ -69,7 +69,7 @@ on:
 jobs:
   build:
     name: Lamu KernelSU Next (SUSFS ${{ github.event.inputs.SUSFS }})
-    runs-on: aapt2
+    runs-on: mp4
 
     permissions:
       contents: write
