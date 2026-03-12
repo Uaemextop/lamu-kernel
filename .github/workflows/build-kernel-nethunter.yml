@@ -49,7 +49,7 @@ on:
         default: 'Off'
 
       optimize:
-        description: "Apply kernel performance optimizations (disable debug, tune scheduler/VM/storage)"
+        description: "Apply safe community kernel optimizations (legacy scheduler/VM/storage patch disabled for boot stability)"
         required: true
         type: choice
         options:
@@ -442,35 +442,13 @@ jobs:
 
           echo "✅ All patches applied"
 
-      - name: "⚡ Apply kernel performance optimizations"
+      - name: "⚡ Skip legacy optimization patch (boot stability)"
         if: ${{ github.event.inputs.optimize == 'On' }}
         run: |
-          KP_DIR="$GITHUB_WORKSPACE/kernel_platform"
-          KSRC="${KP_DIR}/${GKI_KERNEL_SRC}"
-          cd "${KSRC}"
-
-          echo "🚀 Applying kernel performance optimization patch..."
-          echo "   Optimizations include:"
-          echo "   - Disable debugging (KASAN, KFENCE, UBSAN, SCHEDSTATS, PAGE_OWNER)"
-          echo "   - CPU scheduler tuning (reduced latency, faster migration)"
-          echo "   - VM/Memory tuning (swappiness, dirty ratios, compaction)"
-          echo "   - eMMC/Storage improvements (queue depth, DMA segments)"
-          echo "   - BFQ I/O scheduler tuning (reduced idle time)"
-          echo "   - Enable performance compiler flags (-O2)"
-          echo "   - Enable ZSWAP, TCP FastOpen, HZ=300"
-
-          if [ -f "${GITHUB_WORKSPACE}/patches/optimize-kernel-performance.patch" ]; then
-            if patch -p1 --forward --fuzz=3 < "${GITHUB_WORKSPACE}/patches/optimize-kernel-performance.patch"; then
-              echo "✅ Kernel performance optimizations applied cleanly"
-            else
-              echo "⚠️ Some patch hunks failed to apply. Checking rejected hunks:"
-              find . -name "*.rej" -exec echo "  Rejected: {}" \; -exec cat {} \; 2>/dev/null
-              find . -name "*.rej" -delete 2>/dev/null || true
-              echo "⚠️ Continuing with partially applied optimizations"
-            fi
-          else
-            echo "⚠️ Performance optimization patch not found"
-          fi
+          echo "⚠️ Skipping patches/optimize-kernel-performance.patch on ${TARGET_PRODUCT}."
+          echo "⚠️ The legacy patch changes scheduler, MMC, VM, and debug settings"
+          echo "⚠️ and has been linked to non-booting kernels on this device."
+          echo "✅ Only the safer community optimization patches remain enabled."
 
       - name: "⚡ Apply community kernel patches"
         if: ${{ github.event.inputs.optimize == 'On' }}
@@ -900,12 +878,9 @@ jobs:
             - **Android version**: 15
 
             ### ⚡ Performance Optimizations (when enabled)
-            - **Debugging disabled**: KASAN, KFENCE, UBSAN, SCHEDSTATS, PAGE_OWNER/PINNER removed
-            - **CPU scheduler**: Reduced latency (4ms), faster task migration (250µs), base slice 0.5ms
-            - **VM/Memory**: Swappiness 40, dirty ratios 5%/15%, proactive compaction 30%, ZSWAP enabled
-            - **eMMC/Storage**: Queue depth 128, DMA merge segments 1024, MMC crypto enabled
-            - **I/O scheduler**: BFQ idle time halved (4ms), faster throughput
-            - **Compiler**: -O2 optimization, HZ=300, TCP FastOpen
+            - **Safe optimize path**: keeps only compiler and community patch tuning on lamu
+            - **Legacy scheduler/VM/storage patch**: intentionally skipped on lamu for boot stability
+            - **Compiler**: -O2 optimization
             - **Community patches**: CACHE_HOT_BUDDY disabled, F2FS congestion/fsync tuned, EXT4 commit age, socket buffers, freeze timeout, alarmtimer wakeup, IRQ logspam silenced, VFS cache pressure reduced
 
             ### 🔪 Nethunter Support (when enabled)
