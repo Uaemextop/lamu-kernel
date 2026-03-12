@@ -442,12 +442,14 @@ jobs:
             fi
 
             echo "SuSFS added ✅"
-          else
-            echo "📦 Applying manual hook patch..."
-            cp "${KP_DIR}/kernel_patches/next/scope_min_manual_hooks_v1.6.patch" ./
-            if ! patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.6.patch; then
-              echo "⚠️ Manual hook patch had failures"
-            fi
+          fi
+
+          # Apply manual hooks patch (needed for KernelSU-Next with manual hook mode,
+          # regardless of SUSFS — this patches the kernel source, not KernelSU itself)
+          echo "📦 Applying manual hook patch..."
+          cp "${KP_DIR}/kernel_patches/next/scope_min_manual_hooks_v1.6.patch" ./
+          if ! patch -p1 --fuzz=3 < scope_min_manual_hooks_v1.6.patch; then
+            echo "⚠️ Manual hook patch had failures"
           fi
 
           # Apply build fix patches from repository (unifdef fallback for headers_install)
@@ -530,6 +532,7 @@ jobs:
             $SCRIPTS_CONFIG --file "${DEFCONFIG}" \
               --enable CONFIG_KSU \
               --disable CONFIG_KSU_KPROBES_HOOK \
+              --enable CONFIG_KSU_MANUAL_HOOK \
               --enable CONFIG_KSU_SUSFS \
               --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
               --enable CONFIG_KSU_SUSFS_SUS_PATH \
