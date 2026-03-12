@@ -224,9 +224,22 @@ jobs:
           git submodule add --force https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
           git submodule update --init --recursive
 
-          # Checkout the latest tag (like the original setup.sh does)
+          # Checkout the appropriate tag based on SUSFS setting
           cd KernelSU-Next
-          LATEST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "")
+          if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
+            # Use -legacy-susfs variant which already has SUSFS pre-integrated
+            LATEST_TAG=$(git tag -l 'v*-legacy-susfs' | sort -V | tail -1)
+            if [ -z "$LATEST_TAG" ]; then
+              echo "⚠️ No -legacy-susfs tag found, falling back to latest tag"
+              LATEST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "")
+              echo "KSU_HAS_SUSFS=false" >> $GITHUB_ENV
+            else
+              echo "KSU_HAS_SUSFS=true" >> $GITHUB_ENV
+            fi
+          else
+            LATEST_TAG=$(git describe --abbrev=0 --tags 2>/dev/null || echo "")
+            echo "KSU_HAS_SUSFS=false" >> $GITHUB_ENV
+          fi
           if [ -n "$LATEST_TAG" ]; then
             git checkout "$LATEST_TAG"
             echo "Checked out tag: $LATEST_TAG"
@@ -340,57 +353,61 @@ jobs:
               echo "NEED_HOOKS=false" >> $GITHUB_ENV
             fi
 
-            # Apply SUSFS KernelSU integration patch with version-specific fix
-            case "$SUSFS_VERSION" in
-              "v1.5.8")
-                cd ./KernelSU-Next
-                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
-                patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch || true
-                for p in fix_apk_sign.c.patch fix_core_hook.c.patch fix_selinux.c.patch fix_ksud.c.patch; do
-                  cp "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/$p" ./
-                  patch -p1 --forward --fuzz=3 < "$p"
-                done
-                ;;
-              "v1.5.9"|"v1.5.10"|"v1.5.11"|"v1.5.12")
-                cd ./KernelSU-Next
-                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
-                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
-                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -printf "%f\n" | cut -d'.' -f1); do
-                  echo "Patching file: $file.c with fix_$file.c.patch"
-                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.c.patch"
-                done
-                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_kernel_compat.c.patch"
-                ;;
-              "v2.0.0")
-                cd ./KernelSU-Next
-                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
-                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+            # Apply SUSFS KernelSU integration patches (skip if using pre-integrated tag)
+            if [ "${KSU_HAS_SUSFS}" != "true" ]; then
+              case "$SUSFS_VERSION" in
+                "v1.5.8")
+                  cd ./KernelSU-Next
+                  cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                  patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch || true
+                  for p in fix_apk_sign.c.patch fix_core_hook.c.patch fix_selinux.c.patch fix_ksud.c.patch; do
+                    cp "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/$p" ./
+                    patch -p1 --forward --fuzz=3 < "$p"
+                  done
+                  ;;
+                "v1.5.9"|"v1.5.10"|"v1.5.11"|"v1.5.12")
+                  cd ./KernelSU-Next
+                  cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                  patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+                  for file in $(find ./kernel -maxdepth 2 -name "*.rej" -printf "%f\n" | cut -d'.' -f1); do
+                    echo "Patching file: $file.c with fix_$file.c.patch"
+                    patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.c.patch"
+                  done
+                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_kernel_compat.c.patch"
+                  ;;
+                "v2.0.0")
+                  cd ./KernelSU-Next
+                  cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                  patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
 
-                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
-                  echo "Patching file: $file with fix_$file.patch"
-                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
-                done
-                echo "Patching Hook Mode!"
-                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/overwrite_hook_mode.patch"
-                echo "Patching KSU_TOOLKIT Support for SuSFS kernel!"
-                patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/ksu_toolkit.patch"
-                ;;
-              *)
-                echo "⚠️ Unsupported SUSFS version: $SUSFS_VERSION, trying generic approach"
-                cd ./KernelSU-Next
-                cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
-                patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
-                for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
-                  FIX="${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
-                  [ -f "$FIX" ] && patch -p1 --forward < "$FIX" || true
-                done
-                ;;
-            esac
-            patch -p1 --forward < ksun_susfs_latest.patch || true
+                  for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+                    echo "Patching file: $file with fix_$file.patch"
+                    patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
+                  done
+                  echo "Patching Hook Mode!"
+                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/overwrite_hook_mode.patch"
+                  echo "Patching KSU_TOOLKIT Support for SuSFS kernel!"
+                  patch -p1 --forward < "${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/ksu_toolkit.patch"
+                  ;;
+                *)
+                  echo "⚠️ Unsupported SUSFS version: $SUSFS_VERSION, trying generic approach"
+                  cd ./KernelSU-Next
+                  cp "${KP_DIR}/susfs4oki/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" ./
+                  patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+                  for file in $(find ./kernel -maxdepth 2 -name "*.rej" -exec basename {} .rej \;); do
+                    FIX="${KP_DIR}/kernel_patches/next/susfs_fix_patches/$SUSFS_VERSION/fix_$file.patch"
+                    [ -f "$FIX" ] && patch -p1 --forward < "$FIX" || true
+                  done
+                  ;;
+              esac
+              patch -p1 --forward < ksun_susfs_latest.patch || true
 
-            # Clean up reject files
-            find ./kernel -name "*.rej" -delete 2>/dev/null || true
-            cd "${KSRC}"
+              # Clean up reject files
+              find ./kernel -name "*.rej" -delete 2>/dev/null || true
+              cd "${KSRC}"
+            else
+              echo "ℹ️ Skipping KernelSU SUSFS patches (already integrated in tag)"
+            fi
 
             # Fake kernel patch to fix task_mmu.c failures (android15-6.6)
             compat_workaround=0
